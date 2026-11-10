@@ -10,77 +10,48 @@ import app.morphe.patcher.string
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
 
-/**
- * See:
- * https://github.com/MorpheApp/morphe-patcher/blob/main/docs
- * https://github.com/MorpheApp/morphe-patcher/blob/main/docs/2_2_1_fingerprinting.md
- *
- * Declaring fingerprints as classes is not required, but if a fingerprint fails
- * to match then the exception stack trace will include the fingerprint name.
- */
-object AdLoaderFingerprint : Fingerprint(
-    /**
-     * Defining class type is matched using implicit comparison depending on how the type is declared.
-     *
-     * This can be a package without a class: ":com/some/app/ads/"
-     * A class without a package: "/AdsLoader;"
-     * Or a full class if the full class name is not obfuscated: "Lcom/some/app/ads/AdsLoader;"
-     *
-     * See [app.morphe.patcher.StringComparisonType] for more.
-     */
-    definingClass = "Lcom/some/app/ads/AdsLoader;",
-    /**
-     * Exact method name.
-     */
-    name = "showAds",
-    /**
-     * Exact access flags.
-     */
-    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.FINAL),
-    /**
-     * Return type. Partial matches are allowed and follows the same rules as [definingClass]
-     * and [app.morphe.patcher.StringComparisonType].
-     */
-    returnType = "Z",
-    /**
-     * Parameters. Partial matches are allowed and follows the same rules as
-     * [app.morphe.patcher.StringComparisonType].
-     *
-     * Obfuscated class names must be declared only using the object type: "L"
-     * Since obfuscated names change between app targets.
-     */
-    parameters = listOf("Ljava/lang/String;", "I", "L"),
-    /**
-     * Instruction filters. See [app.morphe.patcher.InstructionFilter].
-     */
+/** Helakuru's IME entry point for applying its keyboard window colors. */
+object KeyboardWindowFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/SinhalaSoftKeyboard;",
+    name = "setKeyboardAndNavBarColor",
+    returnType = "V"
+)
+
+/** Inject after the base fragment has created the settings preference view. */
+object KeyboardSettingsFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/fragment/SettingFragment;",
+    name = "onViewCreated",
+    parameters = listOf("Landroid/view/View;", "Landroid/os/Bundle;"),
+    returnType = "V",
     filters = listOf(
-        // Filter 1.
-        fieldAccess(
-            // Restrict to field get operation.
-            opcode = Opcode.IGET,
-            // "this" refers to the class the method was declared in.
-            // It does not include superclasses or subclasses.
-            definingClass = "this",
-            type = "Ljava/util/Map;"
-        ),
-
-        // Filter 2.
-        string("showBannerAds"),
-
-        // Filter 3.
         methodCall(
-            definingClass = "Ljava/lang/String;",
-            name = "equals",
-        ),
+            definingClass = "Landroidx/preference/PreferenceFragmentCompat;",
+            name = "onViewCreated"
+        )
+    )
+)
 
-        // Filter 4.
-        // MatchAfterImmediately() means this must match immediately after the last filter.
+/** Helakuru Lite's keyboard lifecycle callback, called whenever the IME is shown. */
+object HelakuruLiteKeyboardWindowFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/keyboard/KeyboardService;",
+    name = "onStartInputView",
+    parameters = listOf("Landroid/view/inputmethod/EditorInfo;", "Z"),
+    returnType = "V"
+)
+
+// Retained for the template's internal example patch.
+object AdLoaderFingerprint : Fingerprint(
+    definingClass = "Lcom/some/app/ads/AdsLoader;",
+    name = "showAds",
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.FINAL),
+    returnType = "Z",
+    parameters = listOf("Ljava/lang/String;", "I", "L"),
+    filters = listOf(
+        fieldAccess(opcode = Opcode.IGET, definingClass = "this", type = "Ljava/util/Map;"),
+        string("showBannerAds"),
+        methodCall(definingClass = "Ljava/lang/String;", name = "equals"),
         opcode(Opcode.MOVE_RESULT, MatchAfterImmediately()),
-
-        // Filter 5.
         literal(1337),
-
-        // Filter 6.
         opcode(Opcode.IF_EQ)
     )
 )
