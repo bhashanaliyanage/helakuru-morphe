@@ -63,6 +63,16 @@ private val helakuruLiteKeyBackgroundSizeResourcePatch = resourcePatch {
 
             settingsRow.setAttributeNS(androidNamespace, "android:id", "@+id/morphe_key_controls_row")
             settingsRow.setAttributeNS(androidNamespace, "android:layout_height", "wrap_content")
+            settingsRow.removeAttributeNS(androidNamespace, "layout_below")
+            settingsRow.setAttributeNS(androidNamespace, "android:layout_alignParentTop", "true")
+            // Retain stock views for Lite's fragment fields, but remove their rendering and space.
+            for (child in (0 until root.childNodes.length).mapNotNull { root.childNodes.item(it) as? Element }) {
+                val id = child.getAttributeNS(androidNamespace, "id").substringAfterLast("/")
+                if (id in setOf("preview", "preview_border", "preview_keys", "candidate_container")) {
+                    child.setAttributeNS(androidNamespace, "android:visibility", "gone")
+                    child.setAttributeNS(androidNamespace, "android:layout_height", "0dp")
+                }
+            }
 
             val sizeControl = layout.createElement("TextView") as Element
             sizeControl.setAttributeNS(androidNamespace, "android:id", "@+id/morphe_key_background_size")

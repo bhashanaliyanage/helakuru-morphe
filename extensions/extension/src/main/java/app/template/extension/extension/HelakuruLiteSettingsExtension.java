@@ -76,7 +76,10 @@ public final class HelakuruLiteSettingsExtension {
                     activity.getWindow().getDecorView().post(() -> {
                         Dialog dialog = screen.getDialog();
                         if (dialog != null && dialog.getWindow() != null) {
-                            dialog.getWindow().getDecorView().post(() -> applyDialogInsets(dialog));
+                            dialog.getWindow().getDecorView().post(() -> {
+                                applyDialogInsets(dialog);
+                                HelakuruLitePreviewExtension.bindFrostedSettings(dialog, activity);
+                            });
                         }
                     });
                     return false;
@@ -229,6 +232,7 @@ public final class HelakuruLiteSettingsExtension {
                             updateTileTransparencyLabel(transparency, value);
                         }));
             }
+            HelakuruLitePreviewExtension.bindThemeEditor(fragmentObject, root);
         } catch (Throwable ignored) {
             // The theme editor remains functional if this optional row cannot be bound.
         }

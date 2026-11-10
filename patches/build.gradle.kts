@@ -5,8 +5,10 @@ patches {
     about {
         name = "Bhashana's Morphe Patches"
         description = "Patches for apps I like"
+        website = "https://github.com/bhashanaliyanage/helakuru-morphe"
         source = "https://github.com/bhashanaliyanage/helakuru-morphe"
         author = "Bhashana"
+        contact = "https://github.com/bhashanaliyanage"
         license = "GPLv3"
     }
 }
