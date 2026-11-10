@@ -53,6 +53,14 @@ object HelakuruLiteSettingsCreateFingerprint : Fingerprint(
     )
 )
 
+/** Lite keypress event, invoked once for each keyboard key press. */
+object HelakuruLiteKeypressFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/keyboard/KeyboardService;",
+    name = "onPress",
+    parameters = listOf("I"),
+    returnType = "V"
+)
+
 /** Theme customization view containing Lite's existing Key border switch. */
 object HelakuruLiteThemeEditorViewFingerprint : Fingerprint(
     definingClass = "Llk/bhasha/helakuru/lite/theme/fragment/ThemeCustomizeFragment;",

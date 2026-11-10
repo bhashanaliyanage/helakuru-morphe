@@ -41,7 +41,8 @@ public final class HelakuruLiteAccentChooser {
         return null;
     }
 
-    private static String name(String selection) {
+    public static String nameForSelection(String selection) {
+        if ("theme".equals(selection)) return "Follow theme";
         if ("white".equals(selection)) return "White";
         if ("black".equals(selection)) return "Black";
         for (String palette : PALETTES) {
@@ -58,11 +59,17 @@ public final class HelakuruLiteAccentChooser {
     }
 
     public static void updateSummary(Preference preference, SharedPreferences preferences) {
-        preference.setSummary(name(preferences.getString(PREFERENCE_KEY, DEFAULT_ACCENT)));
+        preference.setSummary(nameForSelection(preferences.getString(PREFERENCE_KEY, DEFAULT_ACCENT)));
     }
 
     public static void show(Context context, SharedPreferences preferences, Preference preference) {
-        String[] selection = {preferences.getString(PREFERENCE_KEY, DEFAULT_ACCENT)};
+        show(context, preferences, preference, PREFERENCE_KEY, DEFAULT_ACCENT, "Accent color", false);
+    }
+
+    public static void show(Context context, SharedPreferences preferences, Preference preference,
+                            String preferenceKey, String defaultValue, String title,
+                            boolean includeFollowTheme) {
+        String[] selection = {preferences.getString(preferenceKey, defaultValue)};
         LinearLayout content = new LinearLayout(context);
         content.setOrientation(LinearLayout.VERTICAL);
         int padding = dp(context, 16);
@@ -70,7 +77,12 @@ public final class HelakuruLiteAccentChooser {
         List<Runnable> refresh = new ArrayList<>();
         TextView selected = new TextView(context);
         content.addView(selected);
-        refresh.add(() -> selected.setText("Selected: " + name(selection[0])));
+        refresh.add(() -> selected.setText("Selected: " + nameForSelection(selection[0])));
+
+        if (includeFollowTheme) {
+            LinearLayout fixed = row(context, content, "Theme");
+            addSwatch(context, fixed, "theme", "Theme", selection, refresh);
+        }
 
         LinearLayout fixed = row(context, content, "Fixed colors");
         addSwatch(context, fixed, "white", "White", selection, refresh);
@@ -85,12 +97,12 @@ public final class HelakuruLiteAccentChooser {
         ScrollView scroll = new ScrollView(context);
         scroll.addView(content);
         AlertDialog dialog = new AlertDialog.Builder(context)
-                .setTitle("Accent color")
+                .setTitle(title)
                 .setView(scroll)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Save", (dialogInterface, which) -> {
-                    preferences.edit().putString(PREFERENCE_KEY, selection[0]).apply();
-                    updateSummary(preference, preferences);
+                    preferences.edit().putString(preferenceKey, selection[0]).apply();
+                    preference.setSummary(nameForSelection(selection[0]));
                 }).create();
         dialog.setOnShowListener(ignored -> HelakuruLiteSettingsExtension.applyDialogInsets(dialog));
         dialog.show();
@@ -111,7 +123,7 @@ public final class HelakuruLiteAccentChooser {
 
     private static void addSwatch(Context context, LinearLayout row, String id, String label,
                                    String[] selection, List<Runnable> refresh) {
-        Integer resolved = resolve(context, id);
+        Integer resolved = "theme".equals(id) ? Color.WHITE : resolve(context, id);
         int color = resolved == null ? Color.GRAY : resolved;
         double luminance = (Color.red(color) * .2126 + Color.green(color) * .7152
                 + Color.blue(color) * .0722) / 255;
@@ -121,7 +133,7 @@ public final class HelakuruLiteAccentChooser {
         swatch.setTextColor(foreground);
         swatch.setTextSize(13);
         swatch.setEnabled(resolved != null);
-        swatch.setContentDescription(name(id) + (resolved == null ? ", unavailable" : ""));
+        swatch.setContentDescription(nameForSelection(id) + (resolved == null ? ", unavailable" : ""));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(context, 64), dp(context, 64));
         params.setMargins(dp(context, 3), dp(context, 3), dp(context, 3), dp(context, 3));
         row.addView(swatch, params);

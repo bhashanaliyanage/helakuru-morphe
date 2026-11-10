@@ -79,6 +79,18 @@ private val helakuruLiteKeyBackgroundSizeResourcePatch = resourcePatch {
             sizeControl.setAttributeNS(androidNamespace, "android:clickable", "true")
             sizeControl.setAttributeNS(androidNamespace, "android:focusable", "true")
             root.appendChild(sizeControl)
+
+            val tileColor = sizeControl.cloneNode(false) as Element
+            tileColor.setAttributeNS(androidNamespace, "android:id", "@+id/morphe_key_tile_color")
+            tileColor.setAttributeNS(androidNamespace, "android:layout_below", "@id/morphe_key_background_size")
+            tileColor.setAttributeNS(androidNamespace, "android:text", "Key tile color · Follow theme")
+            root.appendChild(tileColor)
+
+            val tileTransparency = sizeControl.cloneNode(false) as Element
+            tileTransparency.setAttributeNS(androidNamespace, "android:id", "@+id/morphe_key_tile_transparency")
+            tileTransparency.setAttributeNS(androidNamespace, "android:layout_below", "@id/morphe_key_tile_color")
+            tileTransparency.setAttributeNS(androidNamespace, "android:text", "Key tile transparency · 82%")
+            root.appendChild(tileTransparency)
         }
     }
 }

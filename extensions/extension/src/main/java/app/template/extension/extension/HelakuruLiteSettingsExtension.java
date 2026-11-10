@@ -36,6 +36,9 @@ public final class HelakuruLiteSettingsExtension {
     private static final String TRANSPARENCY_AMOUNT = "morphe_frosted_transparency_amount";
     private static final String COLOR_THEME = "morphe_frosted_color_theme";
     private static final String KEY_SIZE = "morphe_key_background_size";
+    private static final String TILE_COLOR = "morphe_key_tile_color";
+    private static final String TILE_TRANSPARENCY = "morphe_key_tile_transparency";
+    private static final int DEFAULT_TILE_TRANSPARENCY = 82;
     private static final int DEFAULT_KEY_SIZE = 90;
     private static final Map<View, int[]> ORIGINAL_PADDING = new WeakHashMap<>();
 
@@ -194,18 +197,38 @@ public final class HelakuruLiteSettingsExtension {
         if (!(rootObject instanceof View)) return;
         final View root = (View) rootObject;
         try {
-            int id = root.getResources().getIdentifier("morphe_key_background_size", "id",
-                    root.getContext().getPackageName());
-            View control = root.findViewById(id);
-            if (!(control instanceof TextView)) return;
-            final TextView label = (TextView) control;
             SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(root.getContext());
-            updateKeySizeLabel(label, preferences.getInt(KEY_SIZE, DEFAULT_KEY_SIZE));
-            label.setOnClickListener(view -> showSlider(root.getContext(), "Key background size", "%", 70, 100,
-                    preferences.getInt(KEY_SIZE, DEFAULT_KEY_SIZE), value -> {
-                        preferences.edit().putInt(KEY_SIZE, value).apply();
-                        updateKeySizeLabel(label, value);
-                    }));
+            TextView size = findTextControl(root, "morphe_key_background_size");
+            if (size != null) {
+                updateKeySizeLabel(size, preferences.getInt(KEY_SIZE, DEFAULT_KEY_SIZE));
+                size.setOnClickListener(view -> showSlider(root.getContext(), "Key background size", "%", 70, 100,
+                        preferences.getInt(KEY_SIZE, DEFAULT_KEY_SIZE), value -> {
+                            preferences.edit().putInt(KEY_SIZE, value).apply();
+                            updateKeySizeLabel(size, value);
+                        }));
+            }
+            TextView color = findTextControl(root, "morphe_key_tile_color");
+            if (color != null) {
+                updateTileColorLabel(color, preferences.getString(TILE_COLOR, "theme"));
+                color.setOnClickListener(view -> HelakuruLiteAccentChooser.show(root.getContext(), preferences,
+                        new Preference(root.getContext()) {
+                            @Override public void setSummary(CharSequence summary) {
+                                super.setSummary(summary);
+                                updateTileColorLabel(color, preferences.getString(TILE_COLOR, "theme"));
+                            }
+                        }, TILE_COLOR, "theme", "Key tile color", true));
+            }
+            TextView transparency = findTextControl(root, "morphe_key_tile_transparency");
+            if (transparency != null) {
+                updateTileTransparencyLabel(transparency,
+                        preferences.getInt(TILE_TRANSPARENCY, DEFAULT_TILE_TRANSPARENCY));
+                transparency.setOnClickListener(view -> showSlider(root.getContext(), "Key tile transparency",
+                        "% transparent", 0, 100,
+                        preferences.getInt(TILE_TRANSPARENCY, DEFAULT_TILE_TRANSPARENCY), value -> {
+                            preferences.edit().putInt(TILE_TRANSPARENCY, value).apply();
+                            updateTileTransparencyLabel(transparency, value);
+                        }));
+            }
         } catch (Throwable ignored) {
             // The theme editor remains functional if this optional row cannot be bound.
         }
@@ -215,20 +238,27 @@ public final class HelakuruLiteSettingsExtension {
     public static void drawKeyBackground(GradientDrawable drawable, Canvas canvas,
                                          Object viewObject, Keyboard.Key key) {
         boolean special = isLighterSpecialKey(key);
-        ColorStateList stockFill = null;
+        ColorStateList stockFill = getDrawableColor(drawable);
+        SharedPreferences preferences = null;
         try {
             if (viewObject instanceof View) {
-                if (special) {
-                    // Lite's fills are already white overlays. A white RGB blend is
-                    // invisible; compose an additional 12% white layer instead.
-                    stockFill = getDrawableColor(drawable);
-                    if (stockFill != null) {
-                        drawable.setColor(ColorStateList.valueOf(blendTowardWhite(
-                                stockFill.getDefaultColor(), 0.12f)));
-                    }
-                }
-                SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(
+                preferences = PreferenceManager.getDefaultSharedPreferences(
                         ((View) viewObject).getContext());
+                int nativeColor = stockFill == null ? 0x2DFFFFFF : stockFill.getDefaultColor();
+                boolean pressed = isPressedDrawable(viewObject, drawable);
+                int transparency = clamp(preferences.getInt(TILE_TRANSPARENCY,
+                        DEFAULT_TILE_TRANSPARENCY), 0, 100);
+                int alpha = Math.round((100 - transparency) * 255f / 100f);
+                if (pressed) alpha = Math.round(alpha * (26f / 45f));
+                String selection = preferences.getString(TILE_COLOR, "theme");
+                int rgb = 0x00FFFFFF;
+                if (!"theme".equals(selection)) {
+                    Integer custom = HelakuruLiteAccentChooser.resolve(((View) viewObject).getContext(), selection);
+                    if (custom != null) rgb = custom;
+                }
+                int fill = Color.argb(alpha, Color.red(rgb), Color.green(rgb), Color.blue(rgb));
+                if (special) fill = blendTowardWhite(fill, 0.12f);
+                drawable.setColor(ColorStateList.valueOf(fill));
                 float scale = clamp(preferences.getInt(KEY_SIZE, DEFAULT_KEY_SIZE), 70, 100) / 100f;
                 float centerX = key.x + key.width / 2f;
                 float centerY = key.y + key.height / 2f;
@@ -240,9 +270,10 @@ public final class HelakuruLiteSettingsExtension {
         } catch (Throwable ignored) {
             // Keep the bounds already computed by Lite if the preference cannot be read.
         }
-        drawable.draw(canvas);
-        if (special && stockFill != null) {
-            drawable.setColor(stockFill);
+        try {
+            drawable.draw(canvas);
+        } finally {
+            if (stockFill != null) drawable.setColor(stockFill);
         }
     }
 
@@ -370,6 +401,30 @@ public final class HelakuruLiteSettingsExtension {
 
     private static void updateKeySizeLabel(TextView label, int value) {
         label.setText("Key background size · " + value + "%");
+    }
+
+    private static TextView findTextControl(View root, String name) {
+        int id = root.getResources().getIdentifier(name, "id", root.getContext().getPackageName());
+        View found = id == 0 ? null : root.findViewById(id);
+        return found instanceof TextView ? (TextView) found : null;
+    }
+
+    private static void updateTileColorLabel(TextView label, String selection) {
+        label.setText("Key tile color · " + HelakuruLiteAccentChooser.nameForSelection(selection));
+    }
+
+    private static void updateTileTransparencyLabel(TextView label, int value) {
+        label.setText("Key tile transparency · " + value + "%");
+    }
+
+    private static boolean isPressedDrawable(Object viewObject, GradientDrawable drawable) {
+        try {
+            Field field = viewObject.getClass().getDeclaredField("keyBackgroundPressed");
+            field.setAccessible(true);
+            return field.get(viewObject) == drawable;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private static void showSlider(Context context, String title, String suffix, int min, int max,

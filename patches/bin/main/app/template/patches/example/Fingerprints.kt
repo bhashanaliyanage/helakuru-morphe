@@ -39,6 +39,59 @@ object HelakuruLiteKeyboardWindowFingerprint : Fingerprint(
     returnType = "V"
 )
 
+/** SettingsActivity callback after its preference XML has been inflated. */
+object HelakuruLiteSettingsCreateFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/setting/SettingsActivity;",
+    name = "onCreate",
+    parameters = listOf("Landroid/os/Bundle;"),
+    returnType = "V",
+    filters = listOf(
+        methodCall(
+            definingClass = "Landroid/preference/PreferenceActivity;",
+            name = "addPreferencesFromResource"
+        )
+    )
+)
+
+/** Lite keypress event, invoked once for each keyboard key press. */
+object HelakuruLiteKeypressFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/keyboard/KeyboardService;",
+    name = "onPress",
+    parameters = listOf("I"),
+    returnType = "V"
+)
+
+/** Theme customization view containing Lite's existing Key border switch. */
+object HelakuruLiteThemeEditorViewFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/theme/fragment/ThemeCustomizeFragment;",
+    name = "u",
+    parameters = listOf("Landroid/view/LayoutInflater;", "Landroid/view/ViewGroup;"),
+    returnType = "Landroid/view/View;",
+    filters = listOf(
+        methodCall(
+            definingClass = "Landroid/widget/CompoundButton;",
+            name = "setOnCheckedChangeListener"
+        )
+    )
+)
+
+/** The dimension-derived inset used solely for drawing key backgrounds. */
+object HelakuruLiteKeyboardViewInsetFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/keyboard/KeyboardView;",
+    name = "onDraw",
+    parameters = listOf("Landroid/graphics/Canvas;"),
+    returnType = "V",
+    filters = listOf(literal(25))
+)
+
+/** Key iteration hook for giving action keys their own rounded shape. */
+object HelakuruLiteKeyboardViewDrawFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/keyboard/KeyboardView;",
+    name = "onDraw",
+    parameters = listOf("Landroid/graphics/Canvas;"),
+    returnType = "V"
+)
+
 // Retained for the template's internal example patch.
 object AdLoaderFingerprint : Fingerprint(
     definingClass = "Lcom/some/app/ads/AdsLoader;",
