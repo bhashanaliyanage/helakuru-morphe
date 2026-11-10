@@ -98,6 +98,14 @@ To develop and release your Patches using this template:
 
 See the [Morphe documentation](https://github.com/MorpheApp/morphe-documentation) for more information.
 
+## Personal photo backgrounds (Helakuru Lite 3.2.0)
+
+Select **Personal Photo Themes (Helakuru Lite)** in Morphe. It is enabled by default and works independently of Frosted Glass and Keypress Feedback.
+
+In Themes, use the Personal Themes photo button, then **Choose photo**. The patch copies the image into private app storage and draws it behind the keyboard; it does not create a built-in Pro photo theme. Photos are center-cropped to fit the keyboard. Accepting a photo disables Frosted Glass. Cancelling the picker or failing to load an image preserves the previous background.
+
+Use the same button and **Remove photo background** to return to the color theme. Confirming a different color theme also removes the photo override; saving the unchanged theme or changing key borders preserves it. Selecting photos in this version replaces the earlier built-in personal-photo flow.
+
 ## 📜 License
 
 Bhashana's Morphe Patches are licensed under the [GNU General Public License v3.0](LICENSE)

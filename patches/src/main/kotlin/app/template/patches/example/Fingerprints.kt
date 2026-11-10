@@ -75,6 +75,48 @@ object HelakuruLiteThemeEditorViewFingerprint : Fingerprint(
     )
 )
 
+/** Intercept picker results before Lite creates a subscription-gated photo model. */
+object HelakuruLitePersonalPhotoResultFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/theme/custom/l;",
+    name = "q",
+    parameters = listOf("I", "I", "Landroid/content/Intent;"),
+    returnType = "V"
+)
+
+/** Keyboard root surface after Lite finishes applying its ordinary theme. */
+object HelakuruLitePhotoRootThemeFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/keyboard/view/KeyboardViewGroup;",
+    name = "setTheme",
+    parameters = listOf("Lt5/d;"),
+    returnType = "V"
+)
+
+/** The permission check before Lite opens its personal-photo picker. */
+object HelakuruLitePersonalPhotoPickerFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/theme/ThemesActivity;",
+    name = "m",
+    parameters = emptyList(),
+    returnType = "V",
+    filters = listOf(string("android.permission.READ_EXTERNAL_STORAGE"))
+)
+
+/** Lite's legacy gallery launcher and its package-visibility preflight. */
+object HelakuruLitePersonalPhotoLaunchFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/theme/custom/l;",
+    name = "T",
+    parameters = emptyList(),
+    returnType = "V",
+    filters = listOf(string("No supported application found."))
+)
+
+/** Lite's theme confirmation callback, where custom themes currently enter the Pro gate. */
+object HelakuruLiteThemeConfirmationFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/theme/ThemesActivity;",
+    name = "q",
+    parameters = listOf("Lt5/f;"),
+    returnType = "V"
+)
+
 /** The dimension-derived inset used solely for drawing key backgrounds. */
 object HelakuruLiteKeyboardViewInsetFingerprint : Fingerprint(
     definingClass = "Llk/bhasha/helakuru/lite/keyboard/KeyboardView;",

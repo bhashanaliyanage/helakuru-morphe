@@ -72,18 +72,33 @@ public final class HelakuruLiteLiveBlurExtension {
     private static void applyKeyboardSurfaces(InputMethodService service, View root,
                                               WindowState state, SharedPreferences preferences) {
         if (root == null) return;
-        int tint = getTintColor(service, preferences);
-        int transparency = getTransparency(service);
+        int themeSurface = getHelakuruBackgroundColor(root);
+        int tint = getTintColor(service, root, preferences);
+        int transparency = getTransparency(service, themeSurface);
         int alpha = Math.round((100 - transparency) * 2.55f);
         ColorDrawable rootTint = new ColorDrawable((tint & 0x00ffffff) | (alpha << 24));
         applyBackground(root, state, rootTint);
+
+        // KeyboardView has a stock opaque background of its own. Let the root's
+        // tinted surface show through instead of leaving the keys on Lite's white fill.
+        View keyboard = asView(getFieldValue(service, "keyboardView"));
+        if (keyboard == null) {
+            int keyboardId = service.getResources().getIdentifier("keyboard_view", "id", service.getPackageName());
+            if (keyboardId != 0) keyboard = root.findViewById(keyboardId);
+        }
+        if (keyboard != null) applyBackground(keyboard, state, transparentDrawable());
 
         Object candidateViews = getFieldValue(service, "candidateViews");
         Object predictionColor = getFieldValue(candidateViews, "predictionBarColor");
         View toolbar = asView(getFieldValue(candidateViews, "container"));
         if (toolbar == null) toolbar = findCandidateContainer(service, root);
-        if (toolbar != null && predictionColor instanceof Integer) {
-            clearToolbarSurfaces(toolbar, state, (Integer) predictionColor);
+        if (toolbar != null) {
+            // The toolbar backdrop is a separate Lite surface; clear it so it
+            // inherits the same root tint and alpha as the key area.
+            applyBackground(toolbar, state, transparentDrawable());
+            int toolbarThemeColor = predictionColor instanceof Integer
+                    ? (Integer) predictionColor : themeSurface;
+            clearToolbarSurfaces(toolbar, state, toolbarThemeColor);
         }
     }
 
@@ -159,28 +174,32 @@ public final class HelakuruLiteLiveBlurExtension {
         state.listenerRoot = null;
     }
 
-    private static int getTintColor(Context context, SharedPreferences preferences) {
+    private static int getTintColor(Context context, View root, SharedPreferences preferences) {
         if ("monet".equals(preferences.getString(COLOR_THEME, "monet"))) {
             Integer color = HelakuruLiteAccentChooser.resolve(context,
                     preferences.getString(HelakuruLiteAccentChooser.PREFERENCE_KEY,
                             HelakuruLiteAccentChooser.DEFAULT_ACCENT));
             if (color != null) return color;
         }
-        return getHelakuruBackgroundColor();
+        return getHelakuruBackgroundColor(root);
     }
 
-    private static int getTransparency(Context context) {
+    private static int getTransparency(Context context, int themeColor) {
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
         if (!preferences.getBoolean(TRANSPARENCY_FOLLOWS_THEME, true)) {
             return clamp(preferences.getInt(TRANSPARENCY_AMOUNT, DEFAULT_TRANSPARENCY), 0, 100);
         }
-        int themeColor = getHelakuruBackgroundColor();
         double luminance = (0.2126 * Color.red(themeColor) + 0.7152 * Color.green(themeColor)
                 + 0.0722 * Color.blue(themeColor)) / 255.0;
         return luminance < 0.45 ? 82 : 90;
     }
 
-    private static int getHelakuruBackgroundColor() {
+    private static int getHelakuruBackgroundColor(View root) {
+        try {
+            Object theme = getFieldValue(root, "theme");
+            Field surface = theme.getClass().getField("f");
+            return surface.getInt(theme);
+        } catch (Throwable ignored) { }
         try {
             Class<?> serviceClass = Class.forName("lk.bhasha.helakuru.lite.keyboard.KeyboardService");
             Field color = serviceClass.getField("keyBackgroundColor");

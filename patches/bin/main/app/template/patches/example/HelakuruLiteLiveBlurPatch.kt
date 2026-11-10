@@ -62,9 +62,31 @@ private val helakuruLiteKeyBackgroundSizeResourcePatch = resourcePatch {
                 .first { it.tagName == "LinearLayout" }
 
             settingsRow.setAttributeNS(androidNamespace, "android:id", "@+id/morphe_key_controls_row")
+            settingsRow.setAttributeNS(androidNamespace, "android:layout_width", "match_parent")
             settingsRow.setAttributeNS(androidNamespace, "android:layout_height", "wrap_content")
+            settingsRow.setAttributeNS(androidNamespace, "android:minHeight", "56dp")
+            settingsRow.setAttributeNS(androidNamespace, "android:layout_margin", "0dp")
+            settingsRow.setAttributeNS(androidNamespace, "android:paddingStart", "16dp")
+            settingsRow.setAttributeNS(androidNamespace, "android:paddingEnd", "16dp")
+            settingsRow.setAttributeNS(androidNamespace, "android:background", "?android:attr/selectableItemBackground")
             settingsRow.removeAttributeNS(androidNamespace, "layout_below")
+            settingsRow.removeAttributeNS(androidNamespace, "layout_centerHorizontal")
             settingsRow.setAttributeNS(androidNamespace, "android:layout_alignParentTop", "true")
+            val stockControls = (0 until settingsRow.childNodes.length)
+                .mapNotNull { settingsRow.childNodes.item(it) as? Element }
+            check(stockControls.size == 4) { "Unexpected Lite key border controls" }
+            // Lite's fragment still references the first two preview labels.
+            stockControls.take(2).forEach {
+                it.setAttributeNS(androidNamespace, "android:visibility", "gone")
+            }
+            stockControls[2].apply {
+                setAttributeNS(androidNamespace, "android:layout_width", "0dp")
+                setAttributeNS(androidNamespace, "android:layout_weight", "1")
+                setAttributeNS(androidNamespace, "android:layout_marginLeft", "0dp")
+                setAttributeNS(androidNamespace, "android:layout_marginStart", "0dp")
+                setAttributeNS(androidNamespace, "android:textSize", "16sp")
+            }
+            stockControls[3].setAttributeNS(androidNamespace, "android:minHeight", "48dp")
             // Retain stock views for Lite's fragment fields, but remove their rendering and space.
             for (child in (0 until root.childNodes.length).mapNotNull { root.childNodes.item(it) as? Element }) {
                 val id = child.getAttributeNS(androidNamespace, "id").substringAfterLast("/")
@@ -74,33 +96,51 @@ private val helakuruLiteKeyBackgroundSizeResourcePatch = resourcePatch {
                 }
             }
 
-            val sizeControl = layout.createElement("TextView") as Element
-            sizeControl.setAttributeNS(androidNamespace, "android:id", "@+id/morphe_key_background_size")
-            sizeControl.setAttributeNS(androidNamespace, "android:layout_width", "match_parent")
-            sizeControl.setAttributeNS(androidNamespace, "android:layout_height", "wrap_content")
-            sizeControl.setAttributeNS(androidNamespace, "android:layout_below", "@id/morphe_key_controls_row")
-            sizeControl.setAttributeNS(androidNamespace, "android:layout_marginLeft", "16dp")
-            sizeControl.setAttributeNS(androidNamespace, "android:layout_marginStart", "16dp")
-            sizeControl.setAttributeNS(androidNamespace, "android:layout_marginTop", "8dp")
-            sizeControl.setAttributeNS(androidNamespace, "android:padding", "8dp")
-            sizeControl.setAttributeNS(androidNamespace, "android:text", "Key background size · 90%")
-            sizeControl.setAttributeNS(androidNamespace, "android:textColor", "@color/white")
-            sizeControl.setAttributeNS(androidNamespace, "android:textSize", "14sp")
-            sizeControl.setAttributeNS(androidNamespace, "android:clickable", "true")
-            sizeControl.setAttributeNS(androidNamespace, "android:focusable", "true")
-            root.appendChild(sizeControl)
+            fun settingRow(rowId: String, valueId: String, below: String, title: String, value: String) {
+                val row = layout.createElement("LinearLayout") as Element
+                row.setAttributeNS(androidNamespace, "android:id", "@+id/$rowId")
+                row.setAttributeNS(androidNamespace, "android:layout_width", "match_parent")
+                row.setAttributeNS(androidNamespace, "android:layout_height", "wrap_content")
+                row.setAttributeNS(androidNamespace, "android:minHeight", "56dp")
+                row.setAttributeNS(androidNamespace, "android:layout_below", "@id/$below")
+                row.setAttributeNS(androidNamespace, "android:orientation", "horizontal")
+                row.setAttributeNS(androidNamespace, "android:gravity", "center_vertical")
+                row.setAttributeNS(androidNamespace, "android:paddingStart", "16dp")
+                row.setAttributeNS(androidNamespace, "android:paddingEnd", "16dp")
+                row.setAttributeNS(androidNamespace, "android:background", "?android:attr/selectableItemBackground")
+                row.setAttributeNS(androidNamespace, "android:clickable", "true")
+                row.setAttributeNS(androidNamespace, "android:focusable", "true")
 
-            val tileColor = sizeControl.cloneNode(false) as Element
-            tileColor.setAttributeNS(androidNamespace, "android:id", "@+id/morphe_key_tile_color")
-            tileColor.setAttributeNS(androidNamespace, "android:layout_below", "@id/morphe_key_background_size")
-            tileColor.setAttributeNS(androidNamespace, "android:text", "Key tile color · Follow theme")
-            root.appendChild(tileColor)
+                val label = layout.createElement("TextView") as Element
+                label.setAttributeNS(androidNamespace, "android:layout_width", "0dp")
+                label.setAttributeNS(androidNamespace, "android:layout_height", "wrap_content")
+                label.setAttributeNS(androidNamespace, "android:layout_weight", "1")
+                label.setAttributeNS(androidNamespace, "android:text", title)
+                label.setAttributeNS(androidNamespace, "android:textColor", "@color/white")
+                label.setAttributeNS(androidNamespace, "android:textSize", "16sp")
+                label.setAttributeNS(androidNamespace, "android:importantForAccessibility", "no")
+                row.appendChild(label)
 
-            val tileTransparency = sizeControl.cloneNode(false) as Element
-            tileTransparency.setAttributeNS(androidNamespace, "android:id", "@+id/morphe_key_tile_transparency")
-            tileTransparency.setAttributeNS(androidNamespace, "android:layout_below", "@id/morphe_key_tile_color")
-            tileTransparency.setAttributeNS(androidNamespace, "android:text", "Key tile transparency · 82%")
-            root.appendChild(tileTransparency)
+                val currentValue = layout.createElement("TextView") as Element
+                currentValue.setAttributeNS(androidNamespace, "android:id", "@+id/$valueId")
+                currentValue.setAttributeNS(androidNamespace, "android:layout_width", "wrap_content")
+                currentValue.setAttributeNS(androidNamespace, "android:layout_height", "wrap_content")
+                currentValue.setAttributeNS(androidNamespace, "android:maxWidth", "180dp")
+                currentValue.setAttributeNS(androidNamespace, "android:maxLines", "2")
+                currentValue.setAttributeNS(androidNamespace, "android:ellipsize", "end")
+                currentValue.setAttributeNS(androidNamespace, "android:gravity", "end")
+                currentValue.setAttributeNS(androidNamespace, "android:paddingStart", "12dp")
+                currentValue.setAttributeNS(androidNamespace, "android:text", "$value  ›")
+                currentValue.setAttributeNS(androidNamespace, "android:textColor", "#b8c1c7")
+                currentValue.setAttributeNS(androidNamespace, "android:textSize", "14sp")
+                currentValue.setAttributeNS(androidNamespace, "android:importantForAccessibility", "no")
+                row.appendChild(currentValue)
+                root.appendChild(row)
+            }
+
+            settingRow("morphe_key_size_row", "morphe_key_background_size", "morphe_key_controls_row", "Key background size", "90%")
+            settingRow("morphe_key_color_row", "morphe_key_tile_color", "morphe_key_size_row", "Key tile color", "Follow theme")
+            settingRow("morphe_key_transparency_row", "morphe_key_tile_transparency", "morphe_key_color_row", "Key tile transparency", "82%")
         }
     }
 }

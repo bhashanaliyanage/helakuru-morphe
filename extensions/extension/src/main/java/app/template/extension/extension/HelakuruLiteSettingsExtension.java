@@ -15,6 +15,7 @@ import android.preference.PreferenceActivity;
 import android.preference.PreferenceManager;
 import android.os.Build;
 import android.widget.LinearLayout;
+import android.widget.CompoundButton;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.view.View;
@@ -204,7 +205,7 @@ public final class HelakuruLiteSettingsExtension {
             TextView size = findTextControl(root, "morphe_key_background_size");
             if (size != null) {
                 updateKeySizeLabel(size, preferences.getInt(KEY_SIZE, DEFAULT_KEY_SIZE));
-                size.setOnClickListener(view -> showSlider(root.getContext(), "Key background size", "%", 70, 100,
+                settingRow(size).setOnClickListener(view -> showSlider(root.getContext(), "Key background size", "%", 70, 100,
                         preferences.getInt(KEY_SIZE, DEFAULT_KEY_SIZE), value -> {
                             preferences.edit().putInt(KEY_SIZE, value).apply();
                             updateKeySizeLabel(size, value);
@@ -213,7 +214,7 @@ public final class HelakuruLiteSettingsExtension {
             TextView color = findTextControl(root, "morphe_key_tile_color");
             if (color != null) {
                 updateTileColorLabel(color, preferences.getString(TILE_COLOR, "theme"));
-                color.setOnClickListener(view -> HelakuruLiteAccentChooser.show(root.getContext(), preferences,
+                settingRow(color).setOnClickListener(view -> HelakuruLiteAccentChooser.show(root.getContext(), preferences,
                         new Preference(root.getContext()) {
                             @Override public void setSummary(CharSequence summary) {
                                 super.setSummary(summary);
@@ -225,12 +226,38 @@ public final class HelakuruLiteSettingsExtension {
             if (transparency != null) {
                 updateTileTransparencyLabel(transparency,
                         preferences.getInt(TILE_TRANSPARENCY, DEFAULT_TILE_TRANSPARENCY));
-                transparency.setOnClickListener(view -> showSlider(root.getContext(), "Key tile transparency",
+                settingRow(transparency).setOnClickListener(view -> showSlider(root.getContext(), "Key tile transparency",
                         "% transparent", 0, 100,
                         preferences.getInt(TILE_TRANSPARENCY, DEFAULT_TILE_TRANSPARENCY), value -> {
                             preferences.edit().putInt(TILE_TRANSPARENCY, value).apply();
                             updateTileTransparencyLabel(transparency, value);
                         }));
+            }
+            int switchId = root.getResources().getIdentifier("key_boarder_toggle", "id", root.getContext().getPackageName());
+            View toggleView = switchId == 0 ? null : root.findViewById(switchId);
+            if (toggleView instanceof CompoundButton) {
+                CompoundButton toggle = (CompoundButton) toggleView;
+                toggle.setContentDescription("Key border");
+                int rowId = root.getResources().getIdentifier("morphe_key_controls_row", "id", root.getContext().getPackageName());
+                View switchRow = rowId == 0 ? null : root.findViewById(rowId);
+                if (switchRow != null) switchRow.setOnClickListener(view -> toggle.performClick());
+                // Lite owns the checked-change listener. Observe its state without replacing it,
+                // including changes made when Lite switches the active theme.
+                Runnable update = () -> {
+                    boolean enabled = toggle.isChecked();
+                    for (TextView value : new TextView[]{size, color, transparency}) {
+                        if (value == null) continue;
+                        View row = settingRow(value);
+                        if (row.isEnabled() != enabled) row.setEnabled(enabled);
+                        float alpha = enabled ? 1f : 0.4f;
+                        if (row.getAlpha() != alpha) row.setAlpha(alpha);
+                    }
+                };
+                update.run();
+                root.getViewTreeObserver().addOnPreDrawListener(() -> {
+                    update.run();
+                    return true;
+                });
             }
             HelakuruLitePreviewExtension.bindThemeEditor(fragmentObject, root);
         } catch (Throwable ignored) {
@@ -404,7 +431,16 @@ public final class HelakuruLiteSettingsExtension {
     }
 
     private static void updateKeySizeLabel(TextView label, int value) {
-        label.setText("Key background size · " + value + "%");
+        updateRowValue(label, "Key background size", value + "%");
+    }
+
+    private static View settingRow(TextView value) {
+        return value.getParent() instanceof View ? (View) value.getParent() : value;
+    }
+
+    private static void updateRowValue(TextView label, String title, String value) {
+        label.setText(value + "  ›");
+        settingRow(label).setContentDescription(title + ", " + value);
     }
 
     private static TextView findTextControl(View root, String name) {
@@ -414,11 +450,11 @@ public final class HelakuruLiteSettingsExtension {
     }
 
     private static void updateTileColorLabel(TextView label, String selection) {
-        label.setText("Key tile color · " + HelakuruLiteAccentChooser.nameForSelection(selection));
+        updateRowValue(label, "Key tile color", HelakuruLiteAccentChooser.nameForSelection(selection));
     }
 
     private static void updateTileTransparencyLabel(TextView label, int value) {
-        label.setText("Key tile transparency · " + value + "%");
+        updateRowValue(label, "Key tile transparency", value + "%");
     }
 
     private static boolean isPressedDrawable(Object viewObject, GradientDrawable drawable) {
