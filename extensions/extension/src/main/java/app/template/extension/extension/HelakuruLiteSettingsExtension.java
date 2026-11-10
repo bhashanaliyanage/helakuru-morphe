@@ -33,6 +33,9 @@ import java.util.WeakHashMap;
 public final class HelakuruLiteSettingsExtension {
     private static final String ENABLED = "morphe_live_keyboard_blur_lite";
     private static final String BLUR_STRENGTH = "morphe_frosted_blur_strength";
+    private static final String BLUR_MODE = "morphe_frosted_blur_mode";
+    private static final String PAUSE_WHILE_TYPING = "morphe_frosted_pause_blur_while_typing";
+    private static final String RESUME_BLUR_DELAY = "morphe_frosted_resume_blur_delay";
     private static final String TRANSPARENCY_FOLLOWS_THEME = "morphe_frosted_transparency_follow_theme";
     private static final String TRANSPARENCY_AMOUNT = "morphe_frosted_transparency_amount";
     private static final String COLOR_THEME = "morphe_frosted_color_theme";
@@ -55,6 +58,9 @@ public final class HelakuruLiteSettingsExtension {
             SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(activity);
             SharedPreferences.Editor defaults = preferences.edit();
             if (!preferences.contains(BLUR_STRENGTH)) defaults.putInt(BLUR_STRENGTH, 32);
+            if (!preferences.contains(BLUR_MODE)) defaults.putString(BLUR_MODE, "background");
+            if (!preferences.contains(PAUSE_WHILE_TYPING)) defaults.putBoolean(PAUSE_WHILE_TYPING, false);
+            if (!preferences.contains(RESUME_BLUR_DELAY)) defaults.putInt(RESUME_BLUR_DELAY, 200);
             if (!preferences.contains(TRANSPARENCY_FOLLOWS_THEME)) {
                 defaults.putBoolean(TRANSPARENCY_FOLLOWS_THEME, true);
             }
@@ -64,6 +70,9 @@ public final class HelakuruLiteSettingsExtension {
             defaults.apply();
 
             Preference blur = find(activity, BLUR_STRENGTH);
+            Preference blurMode = find(activity, BLUR_MODE);
+            Preference pauseWhileTyping = find(activity, PAUSE_WHILE_TYPING);
+            Preference resumeBlurDelay = find(activity, RESUME_BLUR_DELAY);
             Preference transparencyMode = find(activity, "morphe_frosted_transparency_mode");
             Preference transparencyAmount = find(activity, "morphe_frosted_transparency_amount");
             Preference colorTheme = find(activity, "morphe_frosted_color_theme");
@@ -105,6 +114,42 @@ public final class HelakuruLiteSettingsExtension {
                                 preferences.edit().putInt(BLUR_STRENGTH, value).apply();
                                 updateNumberSummary(blur, value, " dp");
                             });
+                    return true;
+                });
+            }
+
+            if (resumeBlurDelay != null) {
+                int delay = clamp(preferences.getInt(RESUME_BLUR_DELAY, 200), 0, 2000);
+                updateNumberSummary(resumeBlurDelay, delay, " ms");
+                resumeBlurDelay.setOnPreferenceClickListener(preference -> {
+                    showSlider(activity, "Resume blur delay", " ms", 0, 2000, 50,
+                            preferences.getInt(RESUME_BLUR_DELAY, 200), value -> {
+                                preferences.edit().putInt(RESUME_BLUR_DELAY, value).apply();
+                                updateNumberSummary(resumeBlurDelay, value, " ms");
+                            });
+                    return true;
+                });
+                resumeBlurDelay.setEnabled(
+                        preferences.getBoolean(ENABLED, false)
+                                && preferences.getBoolean(PAUSE_WHILE_TYPING, false)
+                                && Build.VERSION.SDK_INT >= 31);
+            }
+
+            if (blurMode != null) {
+                updateBlurModeSummary(blurMode, preferences.getString(BLUR_MODE, "background"));
+                blurMode.setOnPreferenceClickListener(preference -> {
+                    String[] choices = {"Background blur", "Blur behind (whole screen)"};
+                    int selected = "behind".equals(preferences.getString(BLUR_MODE, "background")) ? 1 : 0;
+                    new AlertDialog.Builder(activity)
+                            .setTitle("Blur method")
+                            .setSingleChoiceItems(choices, selected, (dialog, which) -> {
+                                String mode = which == 1 ? "behind" : "background";
+                                preferences.edit().putString(BLUR_MODE, mode).apply();
+                                updateBlurModeSummary(blurMode, mode);
+                                dialog.dismiss();
+                            })
+                            .setNegativeButton("Cancel", null)
+                            .show();
                     return true;
                 });
             }
@@ -177,6 +222,11 @@ public final class HelakuruLiteSettingsExtension {
                     }
                     if (colorTheme != null) colorTheme.setEnabled(active);
                     if (blur != null) blur.setEnabled(active && Build.VERSION.SDK_INT >= 31);
+                    setEnabled(blurMode, active && Build.VERSION.SDK_INT >= 31);
+                    setEnabled(pauseWhileTyping, active && Build.VERSION.SDK_INT >= 31);
+                    setEnabled(resumeBlurDelay, active
+                            && preferences.getBoolean(PAUSE_WHILE_TYPING, false)
+                            && Build.VERSION.SDK_INT >= 31);
                     return true;
                 });
                 boolean active = preferences.getBoolean(ENABLED, false);
@@ -191,6 +241,26 @@ public final class HelakuruLiteSettingsExtension {
                         blur.setSummary("Requires Android 12 or later");
                     }
                 }
+                setEnabled(blurMode, active && Build.VERSION.SDK_INT >= 31);
+                setEnabled(pauseWhileTyping, active && Build.VERSION.SDK_INT >= 31);
+                setEnabled(resumeBlurDelay, active
+                        && preferences.getBoolean(PAUSE_WHILE_TYPING, false)
+                        && Build.VERSION.SDK_INT >= 31);
+                if (blurMode != null && Build.VERSION.SDK_INT < 31) {
+                    blurMode.setSummary("Requires Android 12 or later");
+                }
+                if (pauseWhileTyping != null && Build.VERSION.SDK_INT < 31) {
+                    pauseWhileTyping.setSummary("Requires Android 12 or later");
+                }
+            }
+            if (pauseWhileTyping != null) {
+                pauseWhileTyping.setOnPreferenceChangeListener((preference, newValue) -> {
+                    setEnabled(resumeBlurDelay,
+                            preferences.getBoolean(ENABLED, false)
+                                    && Boolean.TRUE.equals(newValue)
+                                    && Build.VERSION.SDK_INT >= 31);
+                    return true;
+                });
             }
         } catch (Throwable ignored) {
             // Keep the stock settings screen usable if a preference differs in an app build.
@@ -421,6 +491,12 @@ public final class HelakuruLiteSettingsExtension {
                 ? "Follow Helakuru theme" : "Use a custom transparency amount");
     }
 
+    private static void updateBlurModeSummary(Preference preference, String mode) {
+        preference.setSummary("behind".equals(mode)
+                ? "Blur behind (whole screen)"
+                : "Blur within the keyboard window");
+    }
+
     private static void updateColorSummary(Preference preference, SharedPreferences preferences) {
         preference.setSummary("monet".equals(preferences.getString(COLOR_THEME, "monet"))
                 ? "Monet" : "Helakuru theme");
@@ -469,22 +545,29 @@ public final class HelakuruLiteSettingsExtension {
 
     private static void showSlider(Context context, String title, String suffix, int min, int max,
                                    int current, ValueChanged callback) {
+        showSlider(context, title, suffix, min, max, 1, current, callback);
+    }
+
+    private static void showSlider(Context context, String title, String suffix, int min, int max,
+                                   int step, int current, ValueChanged callback) {
         LinearLayout layout = new LinearLayout(context);
         layout.setOrientation(LinearLayout.VERTICAL);
         int padding = Math.round(24 * context.getResources().getDisplayMetrics().density);
         layout.setPadding(padding, padding / 2, padding, 0);
+        int safeStep = Math.max(1, step);
+        int selectedValue = min + ((clamp(current, min, max) - min + safeStep / 2) / safeStep) * safeStep;
 
         TextView valueLabel = new TextView(context);
-        valueLabel.setText((suffix.startsWith("%") ? "" : "") + current + suffix);
+        valueLabel.setText(selectedValue + suffix);
         layout.addView(valueLabel, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         SeekBar seekBar = new SeekBar(context);
-        seekBar.setMax(max - min);
-        seekBar.setProgress(clamp(current, min, max) - min);
+        seekBar.setMax((max - min) / safeStep);
+        seekBar.setProgress((clamp(current, min, max) - min + safeStep / 2) / safeStep);
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-                valueLabel.setText((progress + min) + suffix);
+                valueLabel.setText((progress * safeStep + min) + suffix);
             }
             @Override public void onStartTrackingTouch(SeekBar bar) { }
             @Override public void onStopTrackingTouch(SeekBar bar) { }
@@ -496,7 +579,8 @@ public final class HelakuruLiteSettingsExtension {
                 .setTitle(title)
                 .setView(layout)
                 .setNegativeButton("Cancel", null)
-                .setPositiveButton("Save", (dialogInterface, which) -> callback.changed(seekBar.getProgress() + min))
+                .setPositiveButton("Save", (dialogInterface, which) ->
+                        callback.changed(seekBar.getProgress() * safeStep + min))
                 .create();
         dialog.setOnShowListener(ignored -> applyDialogInsets(dialog));
         dialog.show();

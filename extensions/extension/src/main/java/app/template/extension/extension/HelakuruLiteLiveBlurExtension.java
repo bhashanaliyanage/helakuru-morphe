@@ -6,12 +6,16 @@ import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.inputmethodservice.InputMethodService;
+import android.animation.ValueAnimator;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.preference.PreferenceManager;
 import android.view.View;
-import android.view.ViewTreeObserver;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.Window;
+import android.view.WindowManager;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -24,11 +28,16 @@ import java.util.WeakHashMap;
 public final class HelakuruLiteLiveBlurExtension {
     private static final String ENABLED = "morphe_live_keyboard_blur_lite";
     private static final String BLUR_STRENGTH = "morphe_frosted_blur_strength";
+    private static final String BLUR_MODE = "morphe_frosted_blur_mode";
+    private static final String PAUSE_WHILE_TYPING = "morphe_frosted_pause_blur_while_typing";
+    private static final String RESUME_BLUR_DELAY = "morphe_frosted_resume_blur_delay";
     private static final String TRANSPARENCY_FOLLOWS_THEME = "morphe_frosted_transparency_follow_theme";
     private static final String TRANSPARENCY_AMOUNT = "morphe_frosted_transparency_amount";
     private static final String COLOR_THEME = "morphe_frosted_color_theme";
     private static final int DEFAULT_BLUR_DP = 32;
     private static final int DEFAULT_TRANSPARENCY = 50;
+    private static final int DEFAULT_RESUME_BLUR_DELAY_MS = 200;
+    private static final long BLUR_RETURN_DURATION_MS = 160L;
     private static final Map<Window, WindowState> STATES = new WeakHashMap<>();
 
     private HelakuruLiteLiveBlurExtension() { }
@@ -51,21 +60,223 @@ public final class HelakuruLiteLiveBlurExtension {
             synchronized (STATES) {
                 state = STATES.get(window);
                 if (state == null) {
-                    state = new WindowState(getBackgroundBlurRadius(window),
+                    WindowManager.LayoutParams attributes = window.getAttributes();
+                    state = new WindowState(
+                            (attributes.flags & WindowManager.LayoutParams.FLAG_BLUR_BEHIND) != 0,
+                            getBlurBehindRadius(attributes),
+                            getBackgroundBlurRadius(window),
                             window.getDecorView().getBackground());
                     STATES.put(window, state);
                 }
             }
+            final WindowState currentState = state;
+            if (state.preferences == null) {
+                state.preferences = preferences;
+                state.preferencesListener = (sharedPreferences, key) -> {
+                    if (!ENABLED.equals(key) && !PAUSE_WHILE_TYPING.equals(key)) return;
+                    window.getDecorView().post(() -> {
+                        if (!sharedPreferences.getBoolean(ENABLED, false)) {
+                            restore(window, service);
+                        } else if (!sharedPreferences.getBoolean(PAUSE_WHILE_TYPING, false)) {
+                            cancelTypingPause(currentState);
+                            applyKeyboardBlur(service);
+                        }
+                    });
+                };
+                preferences.registerOnSharedPreferenceChangeListener(state.preferencesListener);
+            }
+            cancelTypingPause(state);
+            View previousRoot = state.root;
+            if (previousRoot != null && previousRoot != root) {
+                removeWindowVisibilityListener(state);
+                if (state.detachListener != null) {
+                    previousRoot.removeOnAttachStateChangeListener(state.detachListener);
+                    state.detachListener = null;
+                }
+            }
+            state.root = root;
+            if (root != null && state.detachListener == null) {
+                state.detachListener = new View.OnAttachStateChangeListener() {
+                    @Override public void onViewAttachedToWindow(View view) {
+                        addWindowVisibilityListener(view, currentState);
+                    }
+                    @Override public void onViewDetachedFromWindow(View view) {
+                        removeWindowVisibilityListener(currentState);
+                        cancelTypingPause(currentState);
+                    }
+                };
+                root.addOnAttachStateChangeListener(state.detachListener);
+                if (root.isAttachedToWindow()) addWindowVisibilityListener(root, currentState);
+            }
+            // Input can restart while the user types. Replacing the window background
+            // on each restart can rebuild its blur surface, so install it once per window.
+            if (!state.windowBackgroundApplied) {
+                window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+                state.windowBackgroundApplied = true;
+            }
             if (Build.VERSION.SDK_INT >= 31 && isBlurAvailable(service)) {
                 int blurDp = clamp(preferences.getInt(BLUR_STRENGTH, DEFAULT_BLUR_DP), 0, 80);
                 int radius = Math.round(blurDp * service.getResources().getDisplayMetrics().density);
-                window.getClass().getMethod("setBackgroundBlurRadius", int.class).invoke(window, radius);
+                WindowManager.LayoutParams attributes = window.getAttributes();
+                boolean blurBehind = "behind".equals(preferences.getString(BLUR_MODE, "background"));
+                int behindRadius = blurBehind ? radius : 0;
+                boolean needsBehindFlag = behindRadius > 0;
+                boolean hasBehindFlag = (attributes.flags & WindowManager.LayoutParams.FLAG_BLUR_BEHIND) != 0;
+                if (hasBehindFlag != needsBehindFlag || getBlurBehindRadius(attributes) != behindRadius) {
+                    if (needsBehindFlag) {
+                        attributes.flags |= WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+                    } else {
+                        attributes.flags &= ~WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+                    }
+                    attributes.getClass().getMethod("setBlurBehindRadius", int.class)
+                            .invoke(attributes, behindRadius);
+                    window.setAttributes(attributes);
+                }
+                int backgroundRadius = blurBehind ? 0 : radius;
+                if (getBackgroundBlurRadius(window) != backgroundRadius) {
+                    window.getClass().getMethod("setBackgroundBlurRadius", int.class)
+                            .invoke(window, backgroundRadius);
+                }
             }
-            window.setBackgroundDrawableResource(android.R.color.transparent);
             applyKeyboardSurfaces(service, root, state, preferences);
-            installRefreshListener(service, root, state);
         } catch (Throwable ignored) {
             // Keep the IME usable if a platform or Lite internal changes.
+        }
+    }
+
+    /** Called independently of Lite's optional keypress-feedback patch. */
+    public static void onKeyPress(Object serviceObject, int keyCode) {
+        if (!(serviceObject instanceof InputMethodService)) return;
+        InputMethodService service = (InputMethodService) serviceObject;
+        try {
+            Window window = service.getWindow() == null ? null : service.getWindow().getWindow();
+            if (window == null) return;
+            SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(service);
+            if (!preferences.getBoolean(ENABLED, false)
+                    || !preferences.getBoolean(PAUSE_WHILE_TYPING, false)
+                    || Build.VERSION.SDK_INT < 31 || !isBlurAvailable(service)) return;
+
+            WindowState state;
+            synchronized (STATES) { state = STATES.get(window); }
+            if (state == null) {
+                applyKeyboardBlur(service);
+                synchronized (STATES) { state = STATES.get(window); }
+            }
+            if (state == null) return;
+            cancelTypingPause(state);
+            state.blurMode = preferences.getString(BLUR_MODE, "background");
+            state.targetBlurRadius = Math.round(clamp(
+                    preferences.getInt(BLUR_STRENGTH, DEFAULT_BLUR_DP), 0, 80)
+                    * service.getResources().getDisplayMetrics().density);
+            View root = getRootView(service);
+            state.root = root;
+            state.targetAlpha = getConfiguredRootAlpha(service, root, preferences);
+            setWindowBlur(window, state.blurMode, 0);
+            setRootAlpha(state, 255);
+
+            WindowState capturedState = state;
+            Runnable restoreRunnable = () -> {
+                capturedState.restoreRunnable = null;
+                if (!preferences.getBoolean(ENABLED, false)
+                        || !preferences.getBoolean(PAUSE_WHILE_TYPING, false)
+                        || !service.isInputViewShown()) {
+                    return;
+                }
+                animateBlurBack(window, capturedState);
+            };
+            state.restoreRunnable = restoreRunnable;
+            long delayMs = clamp(preferences.getInt(RESUME_BLUR_DELAY, DEFAULT_RESUME_BLUR_DELAY_MS), 0, 2000);
+            state.handler.postDelayed(restoreRunnable, delayMs);
+        } catch (Throwable ignored) {
+            // Keep key input working if a platform or Lite internal changes.
+        }
+    }
+
+    private static void animateBlurBack(Window window, WindowState state) {
+        ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f);
+        state.animator = animator;
+        animator.setDuration(BLUR_RETURN_DURATION_MS);
+        animator.addUpdateListener(value -> {
+            float fraction = (Float) value.getAnimatedValue();
+            int radius = Math.round(state.targetBlurRadius * fraction);
+            int alpha = Math.round(255 + (state.targetAlpha - 255) * fraction);
+            setWindowBlur(window, state.blurMode, radius);
+            setRootAlpha(state, alpha);
+        });
+        animator.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                if (state.animator == animator) state.animator = null;
+            }
+        });
+        animator.start();
+    }
+
+    private static void cancelTypingPause(WindowState state) {
+        if (state == null) return;
+        if (state.restoreRunnable != null) {
+            state.handler.removeCallbacks(state.restoreRunnable);
+            state.restoreRunnable = null;
+        }
+        if (state.animator != null) {
+            state.animator.cancel();
+            state.animator = null;
+        }
+    }
+
+    private static void addWindowVisibilityListener(View root, WindowState state) {
+        if (state.windowVisibilityListener != null) return;
+        state.visibilityObserver = root.getViewTreeObserver();
+        state.windowVisibilityListener = visibility -> {
+            if (visibility != View.VISIBLE) cancelTypingPause(state);
+        };
+        state.visibilityObserver.addOnWindowVisibilityChangeListener(state.windowVisibilityListener);
+    }
+
+    private static void removeWindowVisibilityListener(WindowState state) {
+        if (state.windowVisibilityListener == null || state.visibilityObserver == null) return;
+        if (state.visibilityObserver.isAlive()) {
+            state.visibilityObserver.removeOnWindowVisibilityChangeListener(state.windowVisibilityListener);
+        }
+        state.windowVisibilityListener = null;
+        state.visibilityObserver = null;
+    }
+
+    private static void setWindowBlur(Window window, String mode, int radius) {
+        if (Build.VERSION.SDK_INT < 31) return;
+        try {
+            WindowManager.LayoutParams attributes = window.getAttributes();
+            boolean blurBehind = "behind".equals(mode);
+            int behindRadius = blurBehind ? radius : 0;
+            boolean hasBehindFlag = (attributes.flags & WindowManager.LayoutParams.FLAG_BLUR_BEHIND) != 0;
+            if ((behindRadius > 0) != hasBehindFlag
+                    || getBlurBehindRadius(attributes) != behindRadius) {
+                if (behindRadius > 0) attributes.flags |= WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+                else attributes.flags &= ~WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+                attributes.getClass().getMethod("setBlurBehindRadius", int.class).invoke(attributes, behindRadius);
+                window.setAttributes(attributes);
+            }
+            int backgroundRadius = blurBehind ? 0 : radius;
+            if (getBackgroundBlurRadius(window) != backgroundRadius) {
+                window.getClass().getMethod("setBackgroundBlurRadius", int.class)
+                        .invoke(window, backgroundRadius);
+            }
+        } catch (Throwable ignored) { }
+    }
+
+    private static int getConfiguredRootAlpha(Context context, View root, SharedPreferences preferences) {
+        if (root == null) return 255;
+        int themeSurface = getHelakuruBackgroundColor(root);
+        int transparency = getTransparency(context, themeSurface);
+        return Math.round((100 - transparency) * 2.55f);
+    }
+
+    private static void setRootAlpha(WindowState state, int alpha) {
+        View root = state.root;
+        if (root == null) return;
+        SurfaceState surface = state.surfaces.get(root);
+        if (surface != null && surface.applied instanceof ColorDrawable) {
+            ColorDrawable tint = (ColorDrawable) surface.applied;
+            tint.setColor((tint.getColor() & 0x00ffffff) | (clamp(alpha, 0, 255) << 24));
         }
     }
 
@@ -136,42 +347,14 @@ public final class HelakuruLiteLiveBlurExtension {
             // Lite may replace a theme background during a keyboard/theme refresh.
             surface.original = current;
         } else if (current instanceof ColorDrawable && target instanceof ColorDrawable) {
-            // Reuse our drawable on every pre-draw; replacing it continuously would
-            // invalidate the keyboard every frame and could lose its saved original.
+            // Reuse our drawable across input restarts to avoid unnecessary redraws
+            // and preserve its saved original.
             ((ColorDrawable) current).setColor(((ColorDrawable) target).getColor());
             surface.applied = current;
             return;
         }
         view.setBackground(target);
         surface.applied = target;
-    }
-
-    private static void installRefreshListener(InputMethodService service, View root, WindowState state) {
-        if (state.listenerRoot == root) return;
-        removeRefreshListener(state);
-        state.listenerRoot = root;
-        state.listener = () -> {
-            try {
-                SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(service);
-                if (!preferences.getBoolean(ENABLED, false)) {
-                    Window window = service.getWindow() == null ? null : service.getWindow().getWindow();
-                    if (window != null) restore(window, service);
-                } else {
-                    applyKeyboardSurfaces(service, getRootView(service), state, preferences);
-                }
-            } catch (Throwable ignored) { }
-            return true;
-        };
-        root.getViewTreeObserver().addOnPreDrawListener(state.listener);
-    }
-
-    private static void removeRefreshListener(WindowState state) {
-        if (state.listener != null && state.listenerRoot != null) {
-            ViewTreeObserver observer = state.listenerRoot.getViewTreeObserver();
-            if (observer.isAlive()) observer.removeOnPreDrawListener(state.listener);
-        }
-        state.listener = null;
-        state.listenerRoot = null;
     }
 
     private static int getTintColor(Context context, View root, SharedPreferences preferences) {
@@ -228,6 +411,14 @@ public final class HelakuruLiteLiveBlurExtension {
         }
     }
 
+    private static int getBlurBehindRadius(WindowManager.LayoutParams attributes) {
+        try {
+            return (Integer) attributes.getClass().getMethod("getBlurBehindRadius").invoke(attributes);
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
     private static View getRootView(InputMethodService service) {
         return asView(getFieldValue(service, "rootView"));
     }
@@ -262,11 +453,28 @@ public final class HelakuruLiteLiveBlurExtension {
             state = STATES.remove(window);
         }
         if (state == null) return;
-        removeRefreshListener(state);
+        cancelTypingPause(state);
+        if (state.preferences != null && state.preferencesListener != null) {
+            state.preferences.unregisterOnSharedPreferenceChangeListener(state.preferencesListener);
+        }
+        View oldRoot = state.root;
+        if (oldRoot != null && state.detachListener != null) {
+            oldRoot.removeOnAttachStateChangeListener(state.detachListener);
+        }
+        removeWindowVisibilityListener(state);
         try {
             if (Build.VERSION.SDK_INT >= 31) {
+                WindowManager.LayoutParams attributes = window.getAttributes();
+                if (state.hadBlurBehindFlag) {
+                    attributes.flags |= WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+                } else {
+                    attributes.flags &= ~WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+                }
+                attributes.getClass().getMethod("setBlurBehindRadius", int.class)
+                        .invoke(attributes, state.blurBehindRadius);
+                window.setAttributes(attributes);
                 window.getClass().getMethod("setBackgroundBlurRadius", int.class)
-                        .invoke(window, state.blurRadius);
+                        .invoke(window, state.backgroundBlurRadius);
             }
             window.setBackgroundDrawable(state.windowBackground);
             for (Map.Entry<View, SurfaceState> entry : new ArrayList<>(state.surfaces.entrySet())) {
@@ -292,13 +500,29 @@ public final class HelakuruLiteLiveBlurExtension {
     }
 
     private static final class WindowState {
-        final int blurRadius;
+        final boolean hadBlurBehindFlag;
+        final int blurBehindRadius;
+        final int backgroundBlurRadius;
         final Drawable windowBackground;
+        boolean windowBackgroundApplied;
+        final Handler handler = new Handler(Looper.getMainLooper());
+        Runnable restoreRunnable;
+        ValueAnimator animator;
+        View root;
+        View.OnAttachStateChangeListener detachListener;
+        ViewTreeObserver visibilityObserver;
+        ViewTreeObserver.OnWindowVisibilityChangeListener windowVisibilityListener;
+        String blurMode = "background";
+        int targetBlurRadius;
+        int targetAlpha = 255;
+        SharedPreferences preferences;
+        SharedPreferences.OnSharedPreferenceChangeListener preferencesListener;
         final Map<View, SurfaceState> surfaces = new IdentityHashMap<>();
-        View listenerRoot;
-        ViewTreeObserver.OnPreDrawListener listener;
-        WindowState(int blurRadius, Drawable windowBackground) {
-            this.blurRadius = blurRadius;
+        WindowState(boolean hadBlurBehindFlag, int blurBehindRadius, int backgroundBlurRadius,
+                    Drawable windowBackground) {
+            this.hadBlurBehindFlag = hadBlurBehindFlag;
+            this.blurBehindRadius = blurBehindRadius;
+            this.backgroundBlurRadius = backgroundBlurRadius;
             this.windowBackground = windowBackground;
         }
     }

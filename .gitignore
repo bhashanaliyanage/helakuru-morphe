@@ -132,4 +132,10 @@ node_modules/
 # Ignore IDEA files
 .idea/
 local.properties
+adb-glitch-frames.png
+adb-typing-repro.mp4
+helakuru-logs.txt
+helakuru-log.txt
+/.gradle-user
 gradle.properties
+/gradle.properties.copy
