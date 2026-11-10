@@ -1,12 +1,14 @@
 package app.template.extension.extension;
 
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.content.res.ColorStateList;
 import android.inputmethodservice.Keyboard;
 import android.preference.Preference;
 import android.preference.PreferenceActivity;
@@ -17,8 +19,14 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.graphics.Color;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 /** Settings UI and drawing helpers for the Lite Frosted Glass patch. */
 public final class HelakuruLiteSettingsExtension {
@@ -29,6 +37,7 @@ public final class HelakuruLiteSettingsExtension {
     private static final String COLOR_THEME = "morphe_frosted_color_theme";
     private static final String KEY_SIZE = "morphe_key_background_size";
     private static final int DEFAULT_KEY_SIZE = 90;
+    private static final Map<View, int[]> ORIGINAL_PADDING = new WeakHashMap<>();
 
     private HelakuruLiteSettingsExtension() {
     }
@@ -55,6 +64,21 @@ public final class HelakuruLiteSettingsExtension {
             Preference transparencyAmount = find(activity, "morphe_frosted_transparency_amount");
             Preference colorTheme = find(activity, "morphe_frosted_color_theme");
             Preference enabled = find(activity, ENABLED);
+            Preference frostPage = find(activity, "morphe_frosted_glass_page");
+            if (frostPage instanceof android.preference.PreferenceScreen) {
+                android.preference.PreferenceScreen screen = (android.preference.PreferenceScreen) frostPage;
+                screen.setOnPreferenceClickListener(preference -> {
+                    // PreferenceScreen creates its dialog after this click listener
+                    // returns false, so look it up on the next UI-loop turn.
+                    activity.getWindow().getDecorView().post(() -> {
+                        Dialog dialog = screen.getDialog();
+                        if (dialog != null && dialog.getWindow() != null) {
+                            dialog.getWindow().getDecorView().post(() -> applyDialogInsets(dialog));
+                        }
+                    });
+                    return false;
+                });
+            }
             Preference accent = find(activity, HelakuruLiteAccentChooser.PREFERENCE_KEY);
             if (accent != null) {
                 HelakuruLiteAccentChooser.updateSummary(accent, preferences);
@@ -190,8 +214,19 @@ public final class HelakuruLiteSettingsExtension {
     /** Scale only the drawable; the stock inset remains available to language labels/icons. */
     public static void drawKeyBackground(GradientDrawable drawable, Canvas canvas,
                                          Object viewObject, Keyboard.Key key) {
+        boolean special = isLighterSpecialKey(key);
+        ColorStateList stockFill = null;
         try {
             if (viewObject instanceof View) {
+                if (special) {
+                    // Lite's fills are already white overlays. A white RGB blend is
+                    // invisible; compose an additional 12% white layer instead.
+                    stockFill = getDrawableColor(drawable);
+                    if (stockFill != null) {
+                        drawable.setColor(ColorStateList.valueOf(blendTowardWhite(
+                                stockFill.getDefaultColor(), 0.12f)));
+                    }
+                }
                 SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(
                         ((View) viewObject).getContext());
                 float scale = clamp(preferences.getInt(KEY_SIZE, DEFAULT_KEY_SIZE), 70, 100) / 100f;
@@ -206,6 +241,48 @@ public final class HelakuruLiteSettingsExtension {
             // Keep the bounds already computed by Lite if the preference cannot be read.
         }
         drawable.draw(canvas);
+        if (special && stockFill != null) {
+            drawable.setColor(stockFill);
+        }
+    }
+
+    private static int blendTowardWhite(int color, float amount) {
+        int oldAlpha = Color.alpha(color);
+        int alpha = Math.round(oldAlpha + (255 - oldAlpha) * amount);
+        float whiteContribution = amount * 255f;
+        float retainedContribution = oldAlpha * (1f - amount);
+        float total = whiteContribution + retainedContribution;
+        int red = Math.round((Color.red(color) * retainedContribution + 255 * whiteContribution) / total);
+        int green = Math.round((Color.green(color) * retainedContribution + 255 * whiteContribution) / total);
+        int blue = Math.round((Color.blue(color) * retainedContribution + 255 * whiteContribution) / total);
+        return Color.argb(alpha, red, green, blue);
+    }
+
+    private static ColorStateList getDrawableColor(GradientDrawable drawable) {
+        try {
+            Method method = GradientDrawable.class.getMethod("getColor");
+            Object result = method.invoke(drawable);
+            return result instanceof ColorStateList ? (ColorStateList) result : null;
+        } catch (Throwable ignored) {
+            // API 23 does not expose getColor(); leave its stock drawable untouched.
+            return null;
+        }
+    }
+
+    private static boolean isLighterSpecialKey(Keyboard.Key key) {
+        if (key == null || key.codes == null || key.codes.length == 0) return false;
+        switch (key.codes[0]) {
+            case -1: // Shift
+            case -2: // ?123 / symbol mode
+            case -5: // Backspace
+            case 10: // Return
+            case 44: // Comma
+            case 46: // Period
+            case 84: // Search
+                return true;
+            default:
+                return false;
+        }
     }
 
     public static void drawKeyLabel(Canvas canvas, String label, Keyboard.Key key,
@@ -320,12 +397,42 @@ public final class HelakuruLiteSettingsExtension {
         layout.addView(seekBar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        new AlertDialog.Builder(context)
+        AlertDialog dialog = new AlertDialog.Builder(context)
                 .setTitle(title)
                 .setView(layout)
                 .setNegativeButton("Cancel", null)
-                .setPositiveButton("Save", (dialog, which) -> callback.changed(seekBar.getProgress() + min))
-                .show();
+                .setPositiveButton("Save", (dialogInterface, which) -> callback.changed(seekBar.getProgress() + min))
+                .create();
+        dialog.setOnShowListener(ignored -> applyDialogInsets(dialog));
+        dialog.show();
+    }
+
+    public static void applyDialogInsets(Dialog dialog) {
+        if (dialog == null || dialog.getWindow() == null) return;
+        Window window = dialog.getWindow();
+        View content = window.findViewById(android.R.id.content);
+        if (content == null) content = window.getDecorView();
+        final View insetView = content;
+        insetView.setOnApplyWindowInsetsListener((view, insets) -> {
+            int[] base;
+            synchronized (ORIGINAL_PADDING) {
+                base = ORIGINAL_PADDING.get(view);
+                if (base == null) {
+                    base = new int[]{view.getPaddingLeft(), view.getPaddingTop(),
+                            view.getPaddingRight(), view.getPaddingBottom()};
+                    ORIGINAL_PADDING.put(view, base);
+                }
+            }
+            int top = insets.getSystemWindowInsetTop();
+            int bottom = insets.getSystemWindowInsetBottom();
+            if (Build.VERSION.SDK_INT >= 28 && insets.getDisplayCutout() != null) {
+                top = Math.max(top, insets.getDisplayCutout().getSafeInsetTop());
+                bottom = Math.max(bottom, insets.getDisplayCutout().getSafeInsetBottom());
+            }
+            view.setPadding(base[0], base[1] + top, base[2], base[3] + bottom);
+            return insets;
+        });
+        insetView.requestApplyInsets();
     }
 
     private static int clamp(int value, int min, int max) {

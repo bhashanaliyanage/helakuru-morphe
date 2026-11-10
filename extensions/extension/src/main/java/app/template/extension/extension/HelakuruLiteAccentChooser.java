@@ -84,14 +84,16 @@ public final class HelakuruLiteAccentChooser {
         for (Runnable update : refresh) update.run();
         ScrollView scroll = new ScrollView(context);
         scroll.addView(content);
-        new AlertDialog.Builder(context)
+        AlertDialog dialog = new AlertDialog.Builder(context)
                 .setTitle("Accent color")
                 .setView(scroll)
                 .setNegativeButton("Cancel", null)
-                .setPositiveButton("Save", (dialog, which) -> {
+                .setPositiveButton("Save", (dialogInterface, which) -> {
                     preferences.edit().putString(PREFERENCE_KEY, selection[0]).apply();
                     updateSummary(preference, preferences);
-                }).show();
+                }).create();
+        dialog.setOnShowListener(ignored -> HelakuruLiteSettingsExtension.applyDialogInsets(dialog));
+        dialog.show();
     }
 
     private static LinearLayout row(Context context, LinearLayout content, String title) {

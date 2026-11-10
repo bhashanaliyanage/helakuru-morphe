@@ -109,8 +109,13 @@ val helakuruLiteLiveKeyboardBlurPatch = patch(
     extendWith("extensions/extension.mpe")
 
     execute {
+        val lifecycleInstructions = HelakuruLiteKeyboardWindowFingerprint.method.implementation!!.instructions.toList()
+        val lifecycleReturn = lifecycleInstructions.indexOfLast {
+            it.opcode == com.android.tools.smali.dexlib2.Opcode.RETURN_VOID
+        }
+        check(lifecycleReturn >= 0) { "Could not locate the Lite keyboard lifecycle return" }
         HelakuruLiteKeyboardWindowFingerprint.method.addInstructions(
-            0,
+            lifecycleReturn,
             "invoke-static {p0}, $LITE_EXTENSION->applyKeyboardBlur(Ljava/lang/Object;)V"
         )
 
