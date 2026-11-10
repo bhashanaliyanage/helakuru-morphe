@@ -75,12 +75,10 @@ public final class HelakuruLiteLiveBlurExtension {
 
     private static int getTintColor(Context context, SharedPreferences preferences) {
         if ("monet".equals(preferences.getString(COLOR_THEME, "monet"))) {
-            try {
-                int id = context.getResources().getIdentifier("system_accent1_600", "color", "android");
-                if (id != 0) return context.getResources().getColor(id);
-            } catch (Throwable ignored) {
-                // Use the current Helakuru theme as a fallback on builds without Monet resources.
-            }
+            Integer color = HelakuruLiteAccentChooser.resolve(context,
+                    preferences.getString(HelakuruLiteAccentChooser.PREFERENCE_KEY,
+                            HelakuruLiteAccentChooser.DEFAULT_ACCENT));
+            if (color != null) return color;
         }
         return getHelakuruBackgroundColor(context);
     }

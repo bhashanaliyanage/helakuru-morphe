@@ -1,6 +1,7 @@
 package app.template.patches.example
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
+import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.patch.patch
 import app.morphe.patcher.patch.resourcePatch
 import app.template.patches.shared.Constants.COMPATIBILITY_HELAKURU_LITE
@@ -43,6 +44,8 @@ private val helakuruLiteFrostedGlassPreferencesPatch = resourcePatch {
             addPreference(preferences, page, androidNamespace, "morphe_frosted_transparency_mode", "Background transparency", "Follow Helakuru theme")
             addPreference(preferences, page, androidNamespace, "morphe_frosted_transparency_amount", "Custom transparency", "50%")
             addPreference(preferences, page, androidNamespace, "morphe_frosted_color_theme", "Color theme", "Monet")
+
+            addPreference(preferences, page, androidNamespace, "morphe_frosted_accent", "Accent color", "Accent 1 / 900")
 
             generalSettings.appendChild(page)
         }
@@ -123,14 +126,23 @@ val helakuruLiteLiveKeyboardBlurPatch = patch(
             "invoke-static {p0, p1}, $LITE_SETTINGS_EXTENSION->bindThemeEditor(Ljava/lang/Object;Ljava/lang/Object;)V"
         )
 
-        val inset = HelakuruLiteKeyboardViewInsetFingerprint.instructionMatches.single()
-        HelakuruLiteKeyboardViewInsetFingerprint.method.addInstructions(
-            inset.index + 1,
-            "invoke-static {v0, v2}, $LITE_SETTINGS_EXTENSION->getKeyBackgroundInset(Ljava/lang/Object;I)I\n" +
-                "move-result v3"
-        )
-
         val drawInstructions = HelakuruLiteKeyboardViewDrawFingerprint.method.implementation!!.instructions.toList()
+        // Apply edits from the end so inserting calls cannot invalidate earlier indices.
+        val edits = drawInstructions.mapIndexedNotNull { index, instruction ->
+            val reference = (instruction as? com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction)
+                ?.reference?.toString()
+            when (reference) {
+                "Landroid/graphics/drawable/GradientDrawable;->draw(Landroid/graphics/Canvas;)V" ->
+                    index to "invoke-static {v1, v9, v0, v7}, $LITE_SETTINGS_EXTENSION->drawKeyBackground(Landroid/graphics/drawable/GradientDrawable;Landroid/graphics/Canvas;Ljava/lang/Object;Landroid/inputmethodservice/Keyboard\$Key;)V"
+                "Landroid/graphics/Canvas;->drawText(Ljava/lang/String;FFLandroid/graphics/Paint;)V" ->
+                    index to "invoke-static {v9, v1, v7, v6, v2}, $LITE_SETTINGS_EXTENSION->drawKeyLabel(Landroid/graphics/Canvas;Ljava/lang/String;Landroid/inputmethodservice/Keyboard\$Key;FLandroid/graphics/Paint;)V"
+                else -> null
+            }
+        }
+        check(edits.size == 3) { "Expected two key backgrounds and one key label draw call" }
+        edits.reversed().forEach { (index, replacement) ->
+            HelakuruLiteKeyboardViewDrawFingerprint.method.replaceInstruction(index, replacement)
+        }
         val keyCastIndex = drawInstructions.indexOfFirst { instruction ->
             instruction.opcode == com.android.tools.smali.dexlib2.Opcode.CHECK_CAST &&
                 (instruction as? com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction)

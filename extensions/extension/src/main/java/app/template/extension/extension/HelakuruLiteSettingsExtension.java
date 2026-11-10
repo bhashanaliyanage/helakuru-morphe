@@ -4,6 +4,10 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.inputmethodservice.Keyboard;
 import android.preference.Preference;
 import android.preference.PreferenceActivity;
 import android.preference.PreferenceManager;
@@ -51,6 +55,16 @@ public final class HelakuruLiteSettingsExtension {
             Preference transparencyAmount = find(activity, "morphe_frosted_transparency_amount");
             Preference colorTheme = find(activity, "morphe_frosted_color_theme");
             Preference enabled = find(activity, ENABLED);
+            Preference accent = find(activity, HelakuruLiteAccentChooser.PREFERENCE_KEY);
+            if (accent != null) {
+                HelakuruLiteAccentChooser.updateSummary(accent, preferences);
+                accent.setEnabled(isEnabled(preferences)
+                        && "monet".equals(preferences.getString(COLOR_THEME, "monet")));
+                accent.setOnPreferenceClickListener(preference -> {
+                    HelakuruLiteAccentChooser.show(activity, preferences, accent);
+                    return true;
+                });
+            }
 
             if (blur != null) {
                 updateNumberSummary(blur, preferences.getInt(BLUR_STRENGTH, 32), " dp");
@@ -113,6 +127,7 @@ public final class HelakuruLiteSettingsExtension {
                             .setSingleChoiceItems(choices, selected, (dialog, which) -> {
                                 preferences.edit().putString(COLOR_THEME, which == 0 ? "monet" : "helakuru").apply();
                                 updateColorSummary(colorTheme, preferences);
+                                setEnabled(accent, which == 0 && isEnabled(preferences));
                                 dialog.dismiss();
                             })
                             .setNegativeButton("Cancel", null)
@@ -125,6 +140,7 @@ public final class HelakuruLiteSettingsExtension {
                 enabled.setOnPreferenceChangeListener((preference, newValue) -> {
                     boolean active = Boolean.TRUE.equals(newValue);
                     setEnabled(transparencyMode, active);
+                    setEnabled(accent, active && "monet".equals(preferences.getString(COLOR_THEME, "monet")));
                     if (transparencyAmount != null) {
                         transparencyAmount.setEnabled(active && !preferences.getBoolean(TRANSPARENCY_FOLLOWS_THEME, true));
                     }
@@ -171,17 +187,52 @@ public final class HelakuruLiteSettingsExtension {
         }
     }
 
-    /** Computes an inset for the drawn keycap without changing the keyboard's hit box. */
-    public static int getKeyBackgroundInset(Object viewObject, int keyHeight) {
-        if (!(viewObject instanceof View) || keyHeight <= 0) return Math.max(0, keyHeight / 25);
+    /** Scale only the drawable; the stock inset remains available to language labels/icons. */
+    public static void drawKeyBackground(GradientDrawable drawable, Canvas canvas,
+                                         Object viewObject, Keyboard.Key key) {
         try {
-            SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(
-                    ((View) viewObject).getContext());
-            int size = clamp(preferences.getInt(KEY_SIZE, DEFAULT_KEY_SIZE), 70, 100);
-            return Math.round(keyHeight * (100 - size) / 200.0f);
+            if (viewObject instanceof View) {
+                SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(
+                        ((View) viewObject).getContext());
+                float scale = clamp(preferences.getInt(KEY_SIZE, DEFAULT_KEY_SIZE), 70, 100) / 100f;
+                float centerX = key.x + key.width / 2f;
+                float centerY = key.y + key.height / 2f;
+                drawable.setBounds(Math.round(centerX - key.width * scale / 2f),
+                        Math.round(centerY - key.height * scale / 2f),
+                        Math.round(centerX + key.width * scale / 2f),
+                        Math.round(centerY + key.height * scale / 2f));
+            }
         } catch (Throwable ignored) {
-            return keyHeight / 25;
+            // Keep the bounds already computed by Lite if the preference cannot be read.
         }
+        drawable.draw(canvas);
+    }
+
+    public static void drawKeyLabel(Canvas canvas, String label, Keyboard.Key key,
+                                    float stockBaseline, Paint paint) {
+        int code = key.codes != null && key.codes.length > 0 ? key.codes[0] : 0;
+        float centerX = key.x + key.width / 2f;
+        if (code == 32 || code == -3) {
+            canvas.drawText(label, centerX, stockBaseline, paint);
+            return;
+        }
+        Rect bounds = new Rect();
+        paint.getTextBounds(label, 0, label.length(), bounds);
+        float baseline;
+        float x;
+        if (bounds.isEmpty()) {
+            Paint.FontMetrics metrics = paint.getFontMetrics();
+            baseline = key.y + key.height / 2f - (metrics.ascent + metrics.descent) / 2f;
+            x = centerX;
+        } else {
+            baseline = key.y + key.height / 2f - (bounds.top + bounds.bottom) / 2f;
+            // getTextBounds uses a left-aligned origin; account for the paint's alignment.
+            float advance = paint.measureText(label);
+            float alignment = paint.getTextAlign() == Paint.Align.CENTER ? advance / 2f
+                    : paint.getTextAlign() == Paint.Align.RIGHT ? advance : 0f;
+            x = centerX - (bounds.left + bounds.right) / 2f + alignment;
+        }
+        canvas.drawText(label, x, baseline, paint);
     }
 
     /** Applies the more rounded Gboard-like silhouette to mode and action keys. */
