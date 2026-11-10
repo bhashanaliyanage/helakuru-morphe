@@ -60,8 +60,22 @@ public final class HelakuruLiteKeypressExtension {
         if (preferences.getBoolean(SOUND, false)) {
             try {
                 AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-                if (audio != null) audio.playSoundEffect(AudioManager.FX_KEY_CLICK);
+                if (audio != null) audio.playSoundEffect(soundEffectForKey(keyCode));
             } catch (Throwable ignored) { }
+        }
+    }
+
+    private static int soundEffectForKey(int keyCode) {
+        switch (keyCode) {
+            case 32: // Space
+                return AudioManager.FX_KEYPRESS_SPACEBAR;
+            case -5: // Backspace / delete
+                return AudioManager.FX_KEYPRESS_DELETE;
+            case 10: // Enter / return
+            case 84: // Search action key
+                return AudioManager.FX_KEYPRESS_RETURN;
+            default:
+                return AudioManager.FX_KEYPRESS_STANDARD;
         }
     }
 

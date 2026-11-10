@@ -43,7 +43,7 @@ To start using this template, follow these steps:
 5. Update the [README.md](README.md) file to be specific of your repo, and update the links in the [issue templates](.github/ISSUE_TEMPLATE).
 6. Choose a name for your patches project. Keep in mind you must use a name that does not 
    imply authorship by the Morphe open source project. If unsure, then simply name these
-   patches after yourself ("UserXYZ Morphe patches"). See the [NOTICE](NOTICE) for details. 
+   patches after yourself ("Bhashana's Morphe patches"). See the [NOTICE](NOTICE) for details. 
 7. (Optional): Add `patches-bundle.png` to the project if you want a custom icon to show in
    Morphe Manager instead of your GitHub profile avatar.
 8. (Optional): Sign your releases, so Morphe Manager refuses a release that was changed or swapped after you published it:
@@ -100,4 +100,4 @@ See the [Morphe documentation](https://github.com/MorpheApp/morphe-documentation
 
 ## 📜 License
 
-UserXYZ Patches are licensed under the [GNU General Public License v3.0](LICENSE)
+Bhashana's Morphe Patches are licensed under the [GNU General Public License v3.0](LICENSE)
