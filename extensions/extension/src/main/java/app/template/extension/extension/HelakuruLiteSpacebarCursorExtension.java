@@ -195,10 +195,17 @@ public final class HelakuruLiteSpacebarCursorExtension {
                 : (int) Math.ceil(state.characterRemainder);
         if (step == 0) return;
         state.characterRemainder -= step;
-        int next = clamp(state.cursor + step, state.minimum, state.maximum);
-        if (next == state.cursor) return;
         InputConnection connection = state.connection == null ? null : state.connection.get();
-        if (connection != null && connection.setSelection(next, next)) state.cursor = next;
+        if (connection == null) return;
+
+        int direction = step > 0 ? 1 : -1;
+        for (int moved = 0; moved < Math.abs(step); moved++) {
+            int next = clamp(state.cursor + direction, state.minimum, state.maximum);
+            if (next == state.cursor) break;
+            if (!connection.setSelection(next, next)) break;
+            state.cursor = next;
+            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+        }
         // Keep consuming space repeats even if an editor rejects a cursor update.
     }
 
