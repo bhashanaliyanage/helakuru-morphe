@@ -62,6 +62,12 @@ public final class HelakuruLiteSpacebarCursorExtension {
         HelakuruLiteTouchObserverExtension.addObserver(keyboard, "spacebar-cursor", observer::onTouch);
     }
 
+    /** Forget a gesture when the IME window hides or detaches without a touch-cancel event. */
+    public static void onKeyboardSessionEnded(Object serviceObject) {
+        View keyboard = findKeyboardView(serviceObject);
+        if (keyboard != null) clear(keyboard);
+    }
+
     /** Defer repeatable space delivery until the gesture is known to be a tap or cursor hold. */
     public static boolean consumeSpaceKey(Object serviceObject, int keyCode) {
         View keyboard = findKeyboardView(serviceObject);
@@ -103,10 +109,19 @@ public final class HelakuruLiteSpacebarCursorExtension {
                     clear(view);
                     return;
                 }
+                synchronized (STATES) {
+                    GestureState existing = STATES.get(view);
+                    if (existing != null) {
+                        synchronized (existing) {
+                            if (existing.touchActive && existing.blurHoldActive) return;
+                        }
+                    }
+                }
                 GestureState state = stateFor(view, ime);
                 synchronized (state) {
                     reset(state);
                     state.touchActive = true;
+                    setBlurHold(state, true);
                     state.downTime = event.getEventTime();
                     state.lastX = event.getX();
                     state.velocity = VelocityTracker.obtain();
@@ -124,6 +139,7 @@ public final class HelakuruLiteSpacebarCursorExtension {
                     if (action == MotionEvent.ACTION_MOVE) {
                         if (!state.cursorMode && !isSpacebarTouch(view, event.getX(), event.getY())) {
                             state.touchActive = false;
+                            setBlurHold(state, false);
                             state.suppressSpaceUntil = android.os.SystemClock.uptimeMillis() + SUPPRESSION_TIMEOUT_MS;
                             cancelActivation(state);
                             recycleVelocity(state);
@@ -139,6 +155,7 @@ public final class HelakuruLiteSpacebarCursorExtension {
                             activate(view, state);
                         }
                         state.touchActive = false;
+                        setBlurHold(state, false);
                         cancelActivation(state);
                         if (!state.fallbackToNative) {
                             state.suppressSpaceUntil = android.os.SystemClock.uptimeMillis() + SUPPRESSION_TIMEOUT_MS;
@@ -148,6 +165,7 @@ public final class HelakuruLiteSpacebarCursorExtension {
                     } else if (action == MotionEvent.ACTION_CANCEL) {
                         state.touchActive = false;
                         state.cursorMode = false;
+                        setBlurHold(state, false);
                         state.suppressSpaceUntil = android.os.SystemClock.uptimeMillis() + SUPPRESSION_TIMEOUT_MS;
                         cancelActivation(state);
                         recycleVelocity(state);
@@ -277,6 +295,7 @@ public final class HelakuruLiteSpacebarCursorExtension {
             GestureState state = STATES.get(view);
             if (state == null) return;
             synchronized (state) {
+                setBlurHold(state, false);
                 state.touchActive = false;
                 state.cursorMode = false;
                 state.suppressSpaceUntil = 0L;
@@ -287,6 +306,7 @@ public final class HelakuruLiteSpacebarCursorExtension {
     }
 
     private static void reset(GestureState state) {
+        setBlurHold(state, false);
         cancelActivation(state);
         recycleVelocity(state);
         state.touchActive = false;
@@ -297,6 +317,13 @@ public final class HelakuruLiteSpacebarCursorExtension {
         state.fallbackToNative = false;
         state.deferredSpace = false;
         state.replayingSpace = false;
+    }
+
+    private static void setBlurHold(GestureState state, boolean held) {
+        if (state.blurHoldActive == held) return;
+        state.blurHoldActive = held;
+        InputMethodService service = state.service.get();
+        if (service != null) HelakuruLiteLiveBlurExtension.onSpacebarHold(service, held);
     }
 
     private static void cancelActivation(GestureState state) {
@@ -345,6 +372,7 @@ public final class HelakuruLiteSpacebarCursorExtension {
         boolean fallbackToNative;
         boolean deferredSpace;
         boolean replayingSpace;
+        boolean blurHoldActive;
 
         GestureState(InputMethodService service) {
             this.service = new WeakReference<>(service);

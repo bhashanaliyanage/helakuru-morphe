@@ -103,15 +103,15 @@ public final class HelakuruLiteLiveBlurExtension {
             if (root != null && state.detachListener == null) {
                 state.detachListener = new View.OnAttachStateChangeListener() {
                     @Override public void onViewAttachedToWindow(View view) {
-                        addWindowVisibilityListener(view, currentState);
+                        addWindowVisibilityListener(view, currentState, service);
                     }
                     @Override public void onViewDetachedFromWindow(View view) {
                         removeWindowVisibilityListener(currentState);
-                        cancelTypingPause(currentState);
+                        endTypingPauseSession(currentState, service);
                     }
                 };
                 root.addOnAttachStateChangeListener(state.detachListener);
-                if (root.isAttachedToWindow()) addWindowVisibilityListener(root, currentState);
+                if (root.isAttachedToWindow()) addWindowVisibilityListener(root, currentState, service);
             }
             if (isBatterySaverOn(service)) {
                 suspendForBatterySaver(service, window, state);
@@ -148,6 +148,13 @@ public final class HelakuruLiteLiveBlurExtension {
                 }
             }
             applyKeyboardSurfaces(service, root, state, preferences);
+            if (!preferences.getBoolean(PAUSE_WHILE_TYPING, false)) {
+                state.spacebarHeld = false;
+            } else if (state.spacebarHeld) {
+                // Input restarts can reapply Lite's theme while the finger is still
+                // down; restore the opaque pause after those surfaces are refreshed.
+                pauseForTyping(service, window, state, preferences);
+            }
         } catch (Throwable ignored) {
             // Keep the IME usable if a platform or Lite internal changes.
         }
@@ -174,6 +181,9 @@ public final class HelakuruLiteLiveBlurExtension {
                     }
                     if (isBatterySaverOn(service)) {
                         suspendForBatterySaver(service, window, state);
+                    } else if (state.spacebarHeld) {
+                        applyKeyboardSurfaces(service, getRootView(service), state, preferences, true);
+                        pauseForTyping(service, window, state, preferences);
                     } else if (state.restoreRunnable != null || state.animator != null) {
                         // Keep the typing-pause opaque state and its pending restoration intact.
                         applyKeyboardSurfaces(service, getRootView(service), state, preferences, true);
@@ -217,26 +227,74 @@ public final class HelakuruLiteLiveBlurExtension {
                     * service.getResources().getDisplayMetrics().density);
             View root = getRootView(service);
             state.root = root;
-            state.targetAlpha = getConfiguredRootAlpha(service, root, preferences);
-            disableWindowBlur(window);
-            setRootAlpha(state, 255);
-
-            WindowState capturedState = state;
-            Runnable restoreRunnable = () -> {
-                capturedState.restoreRunnable = null;
-                if (!preferences.getBoolean(ENABLED, false)
-                        || !preferences.getBoolean(PAUSE_WHILE_TYPING, false)
-                        || !service.isInputViewShown()) {
-                    return;
-                }
-                animateBlurBack(window, capturedState);
-            };
-            state.restoreRunnable = restoreRunnable;
-            long delayMs = clamp(preferences.getInt(RESUME_BLUR_DELAY, DEFAULT_RESUME_BLUR_DELAY_MS), 0, 2000);
-            state.handler.postDelayed(restoreRunnable, delayMs);
+            pauseForTyping(service, window, state, preferences);
+            if (!state.spacebarHeld) scheduleBlurRestore(service, window, state, preferences);
         } catch (Throwable ignored) {
             // Keep key input working if a platform or Lite internal changes.
         }
+    }
+
+    /** Keep blur disabled for the full spacebar touch, including cursor movement. */
+    public static void onSpacebarHold(Object serviceObject, boolean held) {
+        if (!(serviceObject instanceof InputMethodService)) return;
+        InputMethodService service = (InputMethodService) serviceObject;
+        try {
+            Window window = service.getWindow() == null ? null : service.getWindow().getWindow();
+            if (window == null) return;
+            SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(service);
+            if (!preferences.getBoolean(ENABLED, false)
+                    || !preferences.getBoolean(PAUSE_WHILE_TYPING, false)
+                    || Build.VERSION.SDK_INT < 31 || isBatterySaverOn(service)
+                    || !isBlurAvailable(service)) return;
+
+            WindowState state;
+            synchronized (STATES) { state = STATES.get(window); }
+            if (state == null) {
+                applyKeyboardBlur(service);
+                synchronized (STATES) { state = STATES.get(window); }
+            }
+            if (state == null || state.spacebarHeld == held) return;
+            state.spacebarHeld = held;
+            cancelTypingPause(state);
+            if (held) {
+                pauseForTyping(service, window, state, preferences);
+            } else if (service.isInputViewShown()) {
+                pauseForTyping(service, window, state, preferences);
+                scheduleBlurRestore(service, window, state, preferences);
+            }
+        } catch (Throwable ignored) {
+            // Keep key input working if a platform or Lite internal changes.
+        }
+    }
+
+    private static void pauseForTyping(InputMethodService service, Window window,
+                                       WindowState state, SharedPreferences preferences) {
+        state.blurMode = preferences.getString(BLUR_MODE, "background");
+        state.targetBlurRadius = Math.round(clamp(
+                preferences.getInt(BLUR_STRENGTH, DEFAULT_BLUR_DP), 0, 80)
+                * service.getResources().getDisplayMetrics().density);
+        View root = getRootView(service);
+        state.root = root;
+        state.targetAlpha = getConfiguredRootAlpha(service, root, preferences);
+        disableWindowBlur(window);
+        setRootAlpha(state, 255);
+    }
+
+    private static void scheduleBlurRestore(InputMethodService service, Window window,
+                                            WindowState state, SharedPreferences preferences) {
+        WindowState capturedState = state;
+        Runnable restoreRunnable = () -> {
+            capturedState.restoreRunnable = null;
+            if (capturedState.spacebarHeld
+                    || !preferences.getBoolean(ENABLED, false)
+                    || !preferences.getBoolean(PAUSE_WHILE_TYPING, false)
+                    || !service.isInputViewShown()) return;
+            animateBlurBack(window, capturedState);
+        };
+        state.restoreRunnable = restoreRunnable;
+        long delayMs = clamp(preferences.getInt(RESUME_BLUR_DELAY,
+                DEFAULT_RESUME_BLUR_DELAY_MS), 0, 2000);
+        state.handler.postDelayed(restoreRunnable, delayMs);
     }
 
     private static void animateBlurBack(Window window, WindowState state) {
@@ -270,14 +328,23 @@ public final class HelakuruLiteLiveBlurExtension {
         }
     }
 
-    private static void addWindowVisibilityListener(View root, WindowState state) {
+    private static void endTypingPauseSession(WindowState state, InputMethodService service) {
+        state.spacebarHeld = false;
+        cancelTypingPause(state);
+        HelakuruLiteSpacebarCursorExtension.onKeyboardSessionEnded(service);
+    }
+
+    private static void addWindowVisibilityListener(View root, WindowState state,
+                                                    InputMethodService service) {
         // ViewTreeObserver window-visibility listeners were added in API 34. The
         // attach-state listener installed by applyKeyboardBlur covers older Android
         // versions, where hiding the IME window detaches its input view.
         if (Build.VERSION.SDK_INT < 34 || state.windowVisibilityListener != null) return;
         state.visibilityObserver = root.getViewTreeObserver();
         state.windowVisibilityListener = visibility -> {
-            if (visibility != View.VISIBLE) cancelTypingPause(state);
+            if (visibility != View.VISIBLE) {
+                endTypingPauseSession(state, service);
+            }
         };
         state.visibilityObserver.addOnWindowVisibilityChangeListener(state.windowVisibilityListener);
     }
@@ -502,6 +569,7 @@ public final class HelakuruLiteLiveBlurExtension {
 
     /** Restore Lite's stock window and view surfaces while preserving saved user preferences. */
     private static void suspendForBatterySaver(InputMethodService service, Window window, WindowState state) {
+        state.spacebarHeld = false;
         cancelTypingPause(state);
         disableWindowBlur(window);
         try {
@@ -573,6 +641,7 @@ public final class HelakuruLiteLiveBlurExtension {
             state = STATES.remove(window);
         }
         if (state == null) return;
+        state.spacebarHeld = false;
         cancelTypingPause(state);
         if (state.preferences != null && state.preferencesListener != null) {
             state.preferences.unregisterOnSharedPreferenceChangeListener(state.preferencesListener);
@@ -633,6 +702,7 @@ public final class HelakuruLiteLiveBlurExtension {
         final int backgroundBlurRadius;
         final Drawable windowBackground;
         boolean windowBackgroundApplied;
+        boolean spacebarHeld;
         final Handler handler = new Handler(Looper.getMainLooper());
         Runnable restoreRunnable;
         ValueAnimator animator;
