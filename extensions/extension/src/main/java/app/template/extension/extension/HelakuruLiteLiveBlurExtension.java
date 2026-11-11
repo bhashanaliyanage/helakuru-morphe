@@ -1,6 +1,9 @@
 package app.template.extension.extension;
 
 import android.content.Context;
+import android.content.BroadcastReceiver;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
@@ -10,6 +13,7 @@ import android.animation.ValueAnimator;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.preference.PreferenceManager;
 import android.view.View;
 import android.view.ViewGroup;
@@ -85,6 +89,7 @@ public final class HelakuruLiteLiveBlurExtension {
                 };
                 preferences.registerOnSharedPreferenceChangeListener(state.preferencesListener);
             }
+            registerBatterySaverReceiver(service, window, state);
             cancelTypingPause(state);
             View previousRoot = state.root;
             if (previousRoot != null && previousRoot != root) {
@@ -107,6 +112,10 @@ public final class HelakuruLiteLiveBlurExtension {
                 };
                 root.addOnAttachStateChangeListener(state.detachListener);
                 if (root.isAttachedToWindow()) addWindowVisibilityListener(root, currentState);
+            }
+            if (isBatterySaverOn(service)) {
+                suspendForBatterySaver(service, window, state);
+                return;
             }
             // Input can restart while the user types. Replacing the window background
             // on each restart can rebuild its blur surface, so install it once per window.
@@ -154,7 +163,8 @@ public final class HelakuruLiteLiveBlurExtension {
             SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(service);
             if (!preferences.getBoolean(ENABLED, false)
                     || !preferences.getBoolean(PAUSE_WHILE_TYPING, false)
-                    || Build.VERSION.SDK_INT < 31 || !isBlurAvailable(service)) return;
+                    || Build.VERSION.SDK_INT < 31 || isBatterySaverOn(service)
+                    || !isBlurAvailable(service)) return;
 
             WindowState state;
             synchronized (STATES) { state = STATES.get(window); }
@@ -294,11 +304,17 @@ public final class HelakuruLiteLiveBlurExtension {
 
     private static void applyKeyboardSurfaces(InputMethodService service, View root,
                                               WindowState state, SharedPreferences preferences) {
+        applyKeyboardSurfaces(service, root, state, preferences, false);
+    }
+
+    private static void applyKeyboardSurfaces(InputMethodService service, View root,
+                                              WindowState state, SharedPreferences preferences,
+                                              boolean opaque) {
         if (root == null) return;
         int themeSurface = getHelakuruBackgroundColor(root);
         int tint = getTintColor(service, root, preferences);
         int transparency = getTransparency(service, themeSurface);
-        int alpha = Math.round((100 - transparency) * 2.55f);
+        int alpha = opaque ? 255 : Math.round((100 - transparency) * 2.55f);
         ColorDrawable rootTint = new ColorDrawable((tint & 0x00ffffff) | (alpha << 24));
         applyBackground(root, state, rootTint);
 
@@ -415,6 +431,58 @@ public final class HelakuruLiteLiveBlurExtension {
         }
     }
 
+    private static boolean isBatterySaverOn(Context context) {
+        try {
+            PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+            return power != null && power.isPowerSaveMode();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static void registerBatterySaverReceiver(InputMethodService service, Window window,
+                                                       WindowState state) {
+        if (state.batterySaverReceiver != null) return;
+        try {
+            state.batterySaverReceiver = new BroadcastReceiver() {
+                @Override public void onReceive(Context context, Intent intent) {
+                    applyKeyboardBlur(service);
+                }
+            };
+            IntentFilter filter = new IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED);
+            if (Build.VERSION.SDK_INT >= 33) {
+                service.registerReceiver(state.batterySaverReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                service.registerReceiver(state.batterySaverReceiver, filter);
+            }
+        } catch (Throwable ignored) {
+            state.batterySaverReceiver = null;
+        }
+    }
+
+    /** Restore Lite's stock window and view surfaces while preserving saved user preferences. */
+    private static void suspendForBatterySaver(InputMethodService service, Window window, WindowState state) {
+        cancelTypingPause(state);
+        disableWindowBlur(window);
+        try {
+            if (state.windowBackgroundApplied) {
+                window.setBackgroundDrawable(state.windowBackground);
+                state.windowBackgroundApplied = false;
+            }
+            for (Map.Entry<View, SurfaceState> entry : new ArrayList<>(state.surfaces.entrySet())) {
+                View view = entry.getKey();
+                SurfaceState surface = entry.getValue();
+                if (view != null && view.getBackground() == surface.applied) {
+                    view.setBackground(surface.original);
+                }
+            }
+            SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(service);
+            if ("monet".equals(preferences.getString(COLOR_THEME, "monet"))) {
+                applyKeyboardSurfaces(service, getRootView(service), state, preferences, true);
+            }
+        } catch (Throwable ignored) { }
+    }
+
     private static int getBackgroundBlurRadius(Window window) {
         try {
             return (Integer) window.getClass().getMethod("getBackgroundBlurRadius").invoke(window);
@@ -469,6 +537,10 @@ public final class HelakuruLiteLiveBlurExtension {
         if (state.preferences != null && state.preferencesListener != null) {
             state.preferences.unregisterOnSharedPreferenceChangeListener(state.preferencesListener);
         }
+        if (state.batterySaverReceiver != null) {
+            try { service.unregisterReceiver(state.batterySaverReceiver); } catch (Throwable ignored) { }
+            state.batterySaverReceiver = null;
+        }
         View oldRoot = state.root;
         if (oldRoot != null && state.detachListener != null) {
             oldRoot.removeOnAttachStateChangeListener(state.detachListener);
@@ -476,17 +548,21 @@ public final class HelakuruLiteLiveBlurExtension {
         removeWindowVisibilityListener(state);
         try {
             if (Build.VERSION.SDK_INT >= 31) {
-                WindowManager.LayoutParams attributes = window.getAttributes();
-                if (state.hadBlurBehindFlag) {
-                    attributes.flags |= WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+                if (isBatterySaverOn(service)) {
+                    disableWindowBlur(window);
                 } else {
-                    attributes.flags &= ~WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+                    WindowManager.LayoutParams attributes = window.getAttributes();
+                    if (state.hadBlurBehindFlag) {
+                        attributes.flags |= WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+                    } else {
+                        attributes.flags &= ~WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+                    }
+                    attributes.getClass().getMethod("setBlurBehindRadius", int.class)
+                            .invoke(attributes, state.blurBehindRadius);
+                    window.setAttributes(attributes);
+                    window.getClass().getMethod("setBackgroundBlurRadius", int.class)
+                            .invoke(window, state.backgroundBlurRadius);
                 }
-                attributes.getClass().getMethod("setBlurBehindRadius", int.class)
-                        .invoke(attributes, state.blurBehindRadius);
-                window.setAttributes(attributes);
-                window.getClass().getMethod("setBackgroundBlurRadius", int.class)
-                        .invoke(window, state.backgroundBlurRadius);
             }
             window.setBackgroundDrawable(state.windowBackground);
             for (Map.Entry<View, SurfaceState> entry : new ArrayList<>(state.surfaces.entrySet())) {
@@ -529,6 +605,7 @@ public final class HelakuruLiteLiveBlurExtension {
         int targetAlpha = 255;
         SharedPreferences preferences;
         SharedPreferences.OnSharedPreferenceChangeListener preferencesListener;
+        BroadcastReceiver batterySaverReceiver;
         final Map<View, SurfaceState> surfaces = new IdentityHashMap<>();
         WindowState(boolean hadBlurBehindFlag, int blurBehindRadius, int backgroundBlurRadius,
                     Drawable windowBackground) {

@@ -190,10 +190,11 @@ val helakuruLiteLiveKeyboardBlurPatch = patch(
     default = true
 ) {
     compatibleWith(COMPATIBILITY_HELAKURU_LITE)
-    dependsOn(helakuruLiteFrostedGlassPreferencesPatch, helakuruLiteKeyBackgroundSizeResourcePatch)
+    dependsOn(helakuruLiteFrostedGlassPreferencesPatch, helakuruLiteKeyBackgroundSizeResourcePatch, helakuruLiteSettingsColorsPatch)
     extendWith("extensions/extension.mpe")
 
     execute {
+        prepareHelakuruLiteSettingsTheme()
         val lifecycleInstructions = HelakuruLiteKeyboardWindowFingerprint.method.implementation!!.instructions.toList()
         val lifecycleReturn = lifecycleInstructions.indexOfLast {
             it.opcode == com.android.tools.smali.dexlib2.Opcode.RETURN_VOID

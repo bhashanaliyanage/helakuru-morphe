@@ -101,6 +101,7 @@ public final class HelakuruLiteGlassPressExtension {
                 duration.setEnabled(isEnabled);
                 return true;
             });
+            HelakuruLiteSettingsExtension.applySettingsWindow(activity);
         } catch (Throwable ignored) {
             // Keep Lite settings usable if its preference hierarchy changes.
         }
@@ -353,6 +354,7 @@ public final class HelakuruLiteGlassPressExtension {
                 .setPositiveButton("Save", (dialogInterface, which) ->
                         callback.changed(seekBar.getProgress() * safeStep + min))
                 .create();
+        dialog.setOnShowListener(ignored -> HelakuruLiteSettingsExtension.applyDialogInsets(dialog));
         dialog.show();
     }
 

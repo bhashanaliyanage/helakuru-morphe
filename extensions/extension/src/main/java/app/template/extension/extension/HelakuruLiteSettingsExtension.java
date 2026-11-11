@@ -1,6 +1,7 @@
 package app.template.extension.extension;
 
 import android.app.AlertDialog;
+import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -22,11 +23,16 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
+import android.content.res.Configuration;
+import android.preference.PreferenceGroup;
+import android.preference.PreferenceScreen;
 import android.graphics.Color;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.WeakHashMap;
 
 /** Settings UI and drawing helpers for the Lite Frosted Glass patch. */
@@ -45,8 +51,73 @@ public final class HelakuruLiteSettingsExtension {
     private static final int DEFAULT_TILE_TRANSPARENCY = 82;
     private static final int DEFAULT_KEY_SIZE = 90;
     private static final Map<View, int[]> ORIGINAL_PADDING = new WeakHashMap<>();
+    private static final Map<Activity, Boolean> SETTINGS_THEME_PREPARED = new WeakHashMap<>();
 
     private HelakuruLiteSettingsExtension() {
+    }
+
+    /** Called before PreferenceActivity.onCreate so its views inflate with the device's night mode. */
+    public static void prepareSettingsActivityTheme(Object activityObject) {
+        if (!(activityObject instanceof Activity)) return;
+        Activity activity = (Activity) activityObject;
+        synchronized (SETTINGS_THEME_PREPARED) {
+            if (SETTINGS_THEME_PREPARED.containsKey(activity)) return;
+            try {
+                String packageName = activity.getPackageName();
+                boolean dark = (activity.getResources().getConfiguration().uiMode
+                        & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+                int dayNight = activity.getResources().getIdentifier(
+                        dark ? "Theme.AppCompat.NoActionBar" : "Theme.AppCompat.Light.NoActionBar",
+                        "style", packageName);
+                int liteOverrides = activity.getResources().getIdentifier(
+                        "MorpheSettingsColors", "style", packageName);
+                if (dayNight != 0) {
+                    activity.setTheme(dayNight);
+                    if (liteOverrides != 0) activity.getTheme().applyStyle(liteOverrides, true);
+                }
+                SETTINGS_THEME_PREPARED.put(activity, Boolean.TRUE);
+            } catch (Throwable ignored) { }
+        }
+    }
+
+    /** Applies edge-to-edge safe areas and connects every injected preference subpage. */
+    public static void applySettingsWindow(Object activityObject) {
+        if (!(activityObject instanceof PreferenceActivity)) return;
+        PreferenceActivity activity = (PreferenceActivity) activityObject;
+        try {
+            Window window = activity.getWindow();
+            applySystemBarAppearance(window, activity);
+            PreferenceScreen root = activity.getPreferenceScreen();
+            if (root != null) installSubpageInsets(activity, root, new HashSet<PreferenceScreen>());
+        } catch (Throwable ignored) { }
+    }
+
+    private static void installSubpageInsets(PreferenceActivity activity, PreferenceGroup group,
+                                             Set<PreferenceScreen> visited) {
+        for (int i = 0; i < group.getPreferenceCount(); i++) {
+            Preference preference = group.getPreference(i);
+            if (!(preference instanceof PreferenceScreen)) {
+                if (preference instanceof PreferenceGroup) {
+                    installSubpageInsets(activity, (PreferenceGroup) preference, visited);
+                }
+                continue;
+            }
+            PreferenceScreen screen = (PreferenceScreen) preference;
+            if (!visited.add(screen)) continue;
+            screen.setOnPreferenceClickListener(clicked -> {
+                activity.getWindow().getDecorView().postDelayed(() -> {
+                    Dialog dialog = screen.getDialog();
+                    if (dialog == null || dialog.getWindow() == null) return;
+                    dialog.getWindow().getDecorView().post(() -> applyDialogInsets(dialog));
+                    if ("morphe_frosted_glass_page".equals(screen.getKey())) {
+                        dialog.getWindow().getDecorView().post(() ->
+                                HelakuruLitePreviewExtension.bindFrostedSettings(dialog, activity));
+                    }
+                }, 60L);
+                return false;
+            });
+            installSubpageInsets(activity, screen, visited);
+        }
     }
 
     public static void bindSettings(Object activityObject) {
@@ -77,24 +148,6 @@ public final class HelakuruLiteSettingsExtension {
             Preference transparencyAmount = find(activity, "morphe_frosted_transparency_amount");
             Preference colorTheme = find(activity, "morphe_frosted_color_theme");
             Preference enabled = find(activity, ENABLED);
-            Preference frostPage = find(activity, "morphe_frosted_glass_page");
-            if (frostPage instanceof android.preference.PreferenceScreen) {
-                android.preference.PreferenceScreen screen = (android.preference.PreferenceScreen) frostPage;
-                screen.setOnPreferenceClickListener(preference -> {
-                    // PreferenceScreen creates its dialog after this click listener
-                    // returns false, so look it up on the next UI-loop turn.
-                    activity.getWindow().getDecorView().post(() -> {
-                        Dialog dialog = screen.getDialog();
-                        if (dialog != null && dialog.getWindow() != null) {
-                            dialog.getWindow().getDecorView().post(() -> {
-                                applyDialogInsets(dialog);
-                                HelakuruLitePreviewExtension.bindFrostedSettings(dialog, activity);
-                            });
-                        }
-                    });
-                    return false;
-                });
-            }
             Preference accent = find(activity, HelakuruLiteAccentChooser.PREFERENCE_KEY);
             if (accent != null) {
                 HelakuruLiteAccentChooser.updateSummary(accent, preferences);
@@ -140,7 +193,7 @@ public final class HelakuruLiteSettingsExtension {
                 blurMode.setOnPreferenceClickListener(preference -> {
                     String[] choices = {"Background blur", "Blur behind (whole screen)"};
                     int selected = "behind".equals(preferences.getString(BLUR_MODE, "background")) ? 1 : 0;
-                    new AlertDialog.Builder(activity)
+                    AlertDialog settingsDialog = new AlertDialog.Builder(activity)
                             .setTitle("Blur method")
                             .setSingleChoiceItems(choices, selected, (dialog, which) -> {
                                 String mode = which == 1 ? "behind" : "background";
@@ -149,7 +202,8 @@ public final class HelakuruLiteSettingsExtension {
                                 dialog.dismiss();
                             })
                             .setNegativeButton("Cancel", null)
-                            .show();
+                            .create();
+                    showSettingsDialog(settingsDialog);
                     return true;
                 });
             }
@@ -157,7 +211,7 @@ public final class HelakuruLiteSettingsExtension {
             if (transparencyMode != null) {
                 updateTransparencyModeSummary(transparencyMode, preferences);
                 transparencyMode.setOnPreferenceClickListener(preference -> {
-                    new AlertDialog.Builder(activity)
+                    AlertDialog settingsDialog = new AlertDialog.Builder(activity)
                             .setTitle("Background transparency")
                             .setSingleChoiceItems(
                                     new String[]{"Follow Helakuru theme", "Custom amount"},
@@ -172,7 +226,8 @@ public final class HelakuruLiteSettingsExtension {
                                         dialog.dismiss();
                                     })
                             .setNegativeButton("Cancel", null)
-                            .show();
+                            .create();
+                    showSettingsDialog(settingsDialog);
                     return true;
                 });
             }
@@ -198,7 +253,7 @@ public final class HelakuruLiteSettingsExtension {
                 colorTheme.setOnPreferenceClickListener(preference -> {
                     String[] choices = {"Monet", "Helakuru theme"};
                     int selected = "monet".equals(preferences.getString(COLOR_THEME, "monet")) ? 0 : 1;
-                    new AlertDialog.Builder(activity)
+                    AlertDialog settingsDialog = new AlertDialog.Builder(activity)
                             .setTitle("Keyboard color theme")
                             .setSingleChoiceItems(choices, selected, (dialog, which) -> {
                                 preferences.edit().putString(COLOR_THEME, which == 0 ? "monet" : "helakuru").apply();
@@ -207,7 +262,8 @@ public final class HelakuruLiteSettingsExtension {
                                 dialog.dismiss();
                             })
                             .setNegativeButton("Cancel", null)
-                            .show();
+                            .create();
+                    showSettingsDialog(settingsDialog);
                     return true;
                 });
             }
@@ -262,6 +318,7 @@ public final class HelakuruLiteSettingsExtension {
                     return true;
                 });
             }
+            applySettingsWindow(activity);
         } catch (Throwable ignored) {
             // Keep the stock settings screen usable if a preference differs in an app build.
         }
@@ -589,9 +646,15 @@ public final class HelakuruLiteSettingsExtension {
     public static void applyDialogInsets(Dialog dialog) {
         if (dialog == null || dialog.getWindow() == null) return;
         Window window = dialog.getWindow();
+        setEdgeToEdge(window);
+        applySystemBarAppearance(window, dialog.getContext());
         View content = window.findViewById(android.R.id.content);
         if (content == null) content = window.getDecorView();
-        final View insetView = content;
+        applyInsets(content);
+    }
+
+    private static void applyInsets(View insetView) {
+        if (insetView == null) return;
         insetView.setOnApplyWindowInsetsListener((view, insets) -> {
             int[] base;
             synchronized (ORIGINAL_PADDING) {
@@ -602,20 +665,66 @@ public final class HelakuruLiteSettingsExtension {
                     ORIGINAL_PADDING.put(view, base);
                 }
             }
+            int left = insets.getSystemWindowInsetLeft();
             int top = insets.getSystemWindowInsetTop();
+            int right = insets.getSystemWindowInsetRight();
             int bottom = insets.getSystemWindowInsetBottom();
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets system = insets.getInsets(
+                        WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                left = Math.max(left, system.left);
+                top = Math.max(top, system.top);
+                right = Math.max(right, system.right);
+                bottom = Math.max(bottom, system.bottom);
+            }
             if (Build.VERSION.SDK_INT >= 28 && insets.getDisplayCutout() != null) {
+                left = Math.max(left, insets.getDisplayCutout().getSafeInsetLeft());
                 top = Math.max(top, insets.getDisplayCutout().getSafeInsetTop());
+                right = Math.max(right, insets.getDisplayCutout().getSafeInsetRight());
                 bottom = Math.max(bottom, insets.getDisplayCutout().getSafeInsetBottom());
             }
-            view.setPadding(base[0], base[1] + top, base[2], base[3] + bottom);
+            view.setPadding(base[0] + left, base[1] + top, base[2] + right, base[3] + bottom);
             return insets;
         });
         insetView.requestApplyInsets();
     }
 
+    private static void applySystemBarAppearance(Window window, Context context) {
+        if (window == null || context == null) return;
+        boolean lightSurface = (context.getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES;
+        View decor = window.getDecorView();
+        int flags = decor.getSystemUiVisibility();
+        int mask = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        if (Build.VERSION.SDK_INT >= 26) mask |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        flags &= ~mask;
+        if (lightSurface) flags |= mask;
+        decor.setSystemUiVisibility(flags);
+    }
+
+    private static void setEdgeToEdge(Window window) {
+        if (window == null) return;
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        window.setStatusBarColor(Color.TRANSPARENT);
+        window.setNavigationBarColor(Color.TRANSPARENT);
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false);
+        } else {
+            View decor = window.getDecorView();
+            decor.setSystemUiVisibility(decor.getSystemUiVisibility()
+                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        }
+    }
+
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static void showSettingsDialog(AlertDialog dialog) {
+        dialog.setOnShowListener(ignored -> applyDialogInsets(dialog));
+        dialog.show();
     }
 
     private interface ValueChanged {

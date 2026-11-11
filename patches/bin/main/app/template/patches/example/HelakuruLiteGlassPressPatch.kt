@@ -67,10 +67,11 @@ val helakuruLiteGlassPressPatch = patch(
     default = false
 ) {
     compatibleWith(COMPATIBILITY_HELAKURU_LITE)
-    dependsOn(helakuruLiteGlassPressPreferencesPatch)
+    dependsOn(helakuruLiteGlassPressPreferencesPatch, helakuruLiteSettingsColorsPatch)
     extendWith("extensions/extension.mpe")
 
     execute {
+        prepareHelakuruLiteSettingsTheme()
         val settings = HelakuruLiteSettingsCreateFingerprint.instructionMatches.single()
         HelakuruLiteSettingsCreateFingerprint.method.addInstructions(
             settings.index + 1,

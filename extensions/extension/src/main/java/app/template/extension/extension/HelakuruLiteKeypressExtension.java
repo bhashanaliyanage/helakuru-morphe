@@ -29,6 +29,7 @@ public final class HelakuruLiteKeypressExtension {
             SharedPreferences lite = activity.getSharedPreferences("generalPreferences", Context.MODE_PRIVATE);
             bindSwitch(page, "morphe_keypress_vibrate", VIBRATE, lite);
             bindSwitch(page, "morphe_keypress_sound", SOUND, lite);
+            HelakuruLiteSettingsExtension.applySettingsWindow(activity);
         } catch (Throwable ignored) {
             // Leave Lite's normal settings available if this build changes its preference hierarchy.
         }

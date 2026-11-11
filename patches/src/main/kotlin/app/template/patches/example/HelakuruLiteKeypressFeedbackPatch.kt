@@ -41,10 +41,11 @@ val helakuruLiteKeypressFeedbackPatch = patch(
     default = false
 ) {
     compatibleWith(COMPATIBILITY_HELAKURU_LITE)
-    dependsOn(helakuruLiteKeypressSettingsResourcePatch)
+    dependsOn(helakuruLiteKeypressSettingsResourcePatch, helakuruLiteSettingsColorsPatch)
     extendWith("extensions/extension.mpe")
 
     execute {
+        prepareHelakuruLiteSettingsTheme()
         val settings = HelakuruLiteSettingsCreateFingerprint.instructionMatches.single()
         HelakuruLiteSettingsCreateFingerprint.method.addInstructions(
             settings.index + 1,
