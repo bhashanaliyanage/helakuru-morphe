@@ -1,4 +1,4 @@
-group = "app.template"
+group = "com.github.bhashanaliyanage.helakuru"
 
 patches {
     // TODO: Update this section with your project details.
