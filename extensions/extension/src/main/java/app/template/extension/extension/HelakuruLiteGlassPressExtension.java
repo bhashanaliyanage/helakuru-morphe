@@ -227,24 +227,20 @@ public final class HelakuruLiteGlassPressExtension {
 
     public static void drawKeyLabel(Canvas canvas, String label, Keyboard.Key key,
                                     float baseline, Paint paint) {
-        drawLabel(canvas, label, key, baseline, paint, false);
+        drawLabel(canvas, label, key, baseline, paint);
     }
 
     public static void drawFrostedKeyLabel(Canvas canvas, String label, Keyboard.Key key,
                                            float baseline, Paint paint) {
-        drawLabel(canvas, label, key, baseline, paint, true);
+        drawLabel(canvas, label, key, baseline, paint);
     }
 
     private static void drawLabel(Canvas canvas, String label, Keyboard.Key key,
-                                  float baseline, Paint paint, boolean frosted) {
+                                  float baseline, Paint paint) {
         View view = canvasView(canvas);
         int save = canvas.save();
         if (view != null) applyKeyTransform(canvas, view, key);
-        if (frosted) {
-            HelakuruLiteSettingsExtension.drawKeyLabel(canvas, label, key, baseline, paint);
-        } else {
-            canvas.drawText(label, key.x + key.width / 2f, baseline, paint);
-        }
+        HelakuruLiteSettingsExtension.drawKeyLabel(view, canvas, label, key, baseline, paint);
         canvas.restoreToCount(save);
     }
 

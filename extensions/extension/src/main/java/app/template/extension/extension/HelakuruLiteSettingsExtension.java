@@ -4,6 +4,7 @@ import android.app.AlertDialog;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.content.SharedPreferences;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.Canvas;
@@ -11,6 +12,7 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.content.res.ColorStateList;
 import android.inputmethodservice.Keyboard;
+import android.os.SystemClock;
 import android.preference.Preference;
 import android.preference.PreferenceActivity;
 import android.preference.PreferenceManager;
@@ -52,6 +54,8 @@ public final class HelakuruLiteSettingsExtension {
     private static final int DEFAULT_KEY_SIZE = 90;
     private static final Map<View, int[]> ORIGINAL_PADDING = new WeakHashMap<>();
     private static final Map<Activity, Boolean> SETTINGS_THEME_PREPARED = new WeakHashMap<>();
+    private static final Map<Canvas, View> DRAW_CANVAS_VIEWS = new WeakHashMap<>();
+    private static final Map<View, KeyboardMode> KEYBOARD_MODES = new WeakHashMap<>();
 
     private HelakuruLiteSettingsExtension() {
     }
@@ -392,9 +396,23 @@ public final class HelakuruLiteSettingsExtension {
         }
     }
 
+    /** Bind every draw pass, including borderless themes which never draw key tiles. */
+    public static void bindKeyboardCanvas(Object viewObject, Canvas canvas) {
+        if (canvas != null && viewObject instanceof View) {
+            synchronized (DRAW_CANVAS_VIEWS) {
+                DRAW_CANVAS_VIEWS.put(canvas, (View) viewObject);
+            }
+        }
+    }
+
     /** Scale only the drawable; the stock inset remains available to language labels/icons. */
     public static void drawKeyBackground(GradientDrawable drawable, Canvas canvas,
                                          Object viewObject, Keyboard.Key key) {
+        if (canvas != null && viewObject instanceof View) {
+            synchronized (DRAW_CANVAS_VIEWS) {
+                DRAW_CANVAS_VIEWS.put(canvas, (View) viewObject);
+            }
+        }
         boolean special = isLighterSpecialKey(key);
         ColorStateList stockFill = getDrawableColor(drawable);
         SharedPreferences preferences = null;
@@ -476,6 +494,33 @@ public final class HelakuruLiteSettingsExtension {
 
     public static void drawKeyLabel(Canvas canvas, String label, Keyboard.Key key,
                                     float stockBaseline, Paint paint) {
+        View view;
+        synchronized (DRAW_CANVAS_VIEWS) {
+            view = DRAW_CANVAS_VIEWS.get(canvas);
+        }
+        drawKeyLabel(view, canvas, label, key, stockBaseline, paint);
+    }
+
+    public static void drawKeyLabel(Object keyboardViewObject, Canvas canvas, String label,
+                                    Keyboard.Key key, float stockBaseline, Paint paint) {
+        if (!(keyboardViewObject instanceof View)) {
+            synchronized (DRAW_CANVAS_VIEWS) {
+                keyboardViewObject = DRAW_CANVAS_VIEWS.get(canvas);
+            }
+        }
+        if (key == null) {
+            if (label != null) canvas.drawText(label, 0f, stockBaseline, paint);
+            return;
+        }
+        KeyboardMode mode = keyboardMode(keyboardViewObject);
+        boolean sinhala = mode.sinhala;
+        if (sinhala && key != null && key.codes != null && key.codes.length > 0
+                && key.codes[0] == 32) {
+            label = "සිංහල";
+        }
+        if (sinhala && mode.phonetic) {
+            drawSinhalaHint(canvas, label, key, paint, keyboardViewObject);
+        }
         int code = key.codes != null && key.codes.length > 0 ? key.codes[0] : 0;
         float centerX = key.x + key.width / 2f;
         if (code == 32 || code == -3) {
@@ -499,6 +544,140 @@ public final class HelakuruLiteSettingsExtension {
             x = centerX - (bounds.left + bounds.right) / 2f + alignment;
         }
         canvas.drawText(label, x, baseline, paint);
+    }
+
+    private static void drawSinhalaHint(Canvas canvas, String label, Keyboard.Key key,
+                                       Paint basePaint, Object keyboardViewObject) {
+        if (label == null || label.length() != 1 || key == null) return;
+        char letter = label.charAt(0);
+        String hint = sinhalaHintFor(letter);
+        if (hint == null) return;
+
+        Paint hintPaint = new Paint(basePaint);
+        hintPaint.setTextAlign(Paint.Align.CENTER);
+        hintPaint.setTextSize(Math.max(8f, basePaint.getTextSize() * 0.42f));
+        hintPaint.setAlpha(Math.round(basePaint.getAlpha() * 0.68f));
+        float x = key.x + key.width / 2f;
+        float y = key.y + key.height * 0.27f;
+        canvas.drawText(hint, x, y, hintPaint);
+    }
+
+    private static String sinhalaHintFor(char letter) {
+        switch (letter) {
+            case 'q': return "ද";
+            case 'w': return "ව";
+            case 'e': return "එ";
+            case 'r': return "ර";
+            case 't': return "ට";
+            case 'y': return "ය";
+            case 'u': return "උ";
+            case 'i': return "ඉ";
+            case 'o': return "ඔ";
+            case 'p': return "ප";
+            case 'a': return "අ";
+            case 's': return "ස";
+            case 'd': return "ඩ";
+            case 'f': return "ෆ";
+            case 'g': return "ග";
+            case 'h': return "හ";
+            case 'j': return "ජ";
+            case 'k': return "ක";
+            case 'l': return "ල";
+            case 'x': return "ං";
+            case 'c': return "ක";
+            case 'v': return "ව";
+            case 'b': return "බ";
+            case 'n': return "න";
+            case 'm': return "ම";
+            case 'E': return "ඓ";
+            case 'R': return "සෘ";
+            case 'T': return "ඨ";
+            case 'I': return "ඊ";
+            case 'P': return "ඵ";
+            case 'A': return "ඇ";
+            case 'S': return "ෂ";
+            case 'D': return "ඪ";
+            case 'G': return "ඝ";
+            case 'H': return "ඃ";
+            case 'J': return "ඣ";
+            case 'L': return "ළ";
+            case 'X': return "ඞ";
+            case 'B': return "ඹ";
+            case 'N': return "ණ";
+            default: return null;
+        }
+    }
+
+    private static Object keyboardService(Object keyboardViewObject) {
+        if (!(keyboardViewObject instanceof View)) return null;
+        Context context = ((View) keyboardViewObject).getContext();
+        while (context instanceof ContextWrapper) {
+            // InputMethodService is itself a ContextWrapper. Stop here instead of
+            // unwrapping it into ContextImpl, which has no keyboard mode fields.
+            if (context instanceof android.inputmethodservice.InputMethodService) return context;
+            Context base = ((ContextWrapper) context).getBaseContext();
+            if (base == context) break;
+            context = base;
+        }
+        return context;
+    }
+
+    private static KeyboardMode keyboardMode(Object keyboardViewObject) {
+        if (!(keyboardViewObject instanceof View)) return KeyboardMode.NONE;
+        View view = (View) keyboardViewObject;
+        long now = SystemClock.uptimeMillis();
+        synchronized (KEYBOARD_MODES) {
+            KeyboardMode cached = KEYBOARD_MODES.get(view);
+            if (cached != null && now - cached.readAt < 50L) return cached;
+        }
+        KeyboardMode mode = new KeyboardMode(false, false, now);
+        try {
+            Object service = keyboardService(view);
+            if (service != null) {
+                Field languageField = findField(service.getClass(), "language");
+                Field layoutField = findField(service.getClass(), "activeLayout");
+                if (languageField != null && layoutField != null) {
+                    languageField.setAccessible(true);
+                    layoutField.setAccessible(true);
+                    Object layout = layoutField.get(service);
+                    boolean sinhala = languageField.getInt(service) == 2;
+                    boolean phonetic = false;
+                    if (layout != null) {
+                        Method name = layout.getClass().getMethod("name");
+                        phonetic = "PHONETIC".equals(name.invoke(layout));
+                    }
+                    mode = new KeyboardMode(sinhala, phonetic, now);
+                }
+            }
+        } catch (Throwable ignored) {
+            // Preserve the cached inactive state if this app build changes its field layout.
+        }
+        synchronized (KEYBOARD_MODES) {
+            KEYBOARD_MODES.put(view, mode);
+        }
+        return mode;
+    }
+
+    private static Field findField(Class<?> type, String name) {
+        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+            try {
+                return current.getDeclaredField(name);
+            } catch (NoSuchFieldException ignored) { }
+        }
+        return null;
+    }
+
+    private static final class KeyboardMode {
+        static final KeyboardMode NONE = new KeyboardMode(false, false, 0L);
+        final boolean sinhala;
+        final boolean phonetic;
+        final long readAt;
+
+        KeyboardMode(boolean sinhala, boolean phonetic, long readAt) {
+            this.sinhala = sinhala;
+            this.phonetic = phonetic;
+            this.readAt = readAt;
+        }
     }
 
     /** Applies the more rounded Gboard-like silhouette to mode and action keys. */

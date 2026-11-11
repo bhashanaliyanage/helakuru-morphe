@@ -234,7 +234,10 @@ public final class HelakuruLiteLiveBlurExtension {
     }
 
     private static void addWindowVisibilityListener(View root, WindowState state) {
-        if (state.windowVisibilityListener != null) return;
+        // ViewTreeObserver window-visibility listeners were added in API 34. The
+        // attach-state listener installed by applyKeyboardBlur covers older Android
+        // versions, where hiding the IME window detaches its input view.
+        if (Build.VERSION.SDK_INT < 34 || state.windowVisibilityListener != null) return;
         state.visibilityObserver = root.getViewTreeObserver();
         state.windowVisibilityListener = visibility -> {
             if (visibility != View.VISIBLE) cancelTypingPause(state);
@@ -244,7 +247,7 @@ public final class HelakuruLiteLiveBlurExtension {
 
     private static void removeWindowVisibilityListener(WindowState state) {
         if (state.windowVisibilityListener == null || state.visibilityObserver == null) return;
-        if (state.visibilityObserver.isAlive()) {
+        if (Build.VERSION.SDK_INT >= 34 && state.visibilityObserver.isAlive()) {
             state.visibilityObserver.removeOnWindowVisibilityChangeListener(state.windowVisibilityListener);
         }
         state.windowVisibilityListener = null;

@@ -257,5 +257,9 @@ val helakuruLiteLiveKeyboardBlurPatch = patch(
             keyCastIndex + 1,
             "invoke-static {v0, v7}, $LITE_SETTINGS_EXTENSION->applyActionKeyStyle(Ljava/lang/Object;Ljava/lang/Object;)V"
         )
+        HelakuruLiteKeyboardViewDrawFingerprint.method.addInstructions(
+            0,
+            "invoke-static/range {p0 .. p1}, $LITE_SETTINGS_EXTENSION->bindKeyboardCanvas(Ljava/lang/Object;Landroid/graphics/Canvas;)V"
+        )
     }
 }
