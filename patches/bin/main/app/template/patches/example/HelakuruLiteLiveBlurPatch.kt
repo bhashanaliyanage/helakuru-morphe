@@ -10,6 +10,7 @@ import org.w3c.dom.Element
 private const val LITE_EXTENSION = "Lapp/template/extension/extension/HelakuruLiteLiveBlurExtension;"
 private const val LITE_SETTINGS_EXTENSION = "Lapp/template/extension/extension/HelakuruLiteSettingsExtension;"
 private const val LITE_SETTINGS_KEY = "morphe_live_keyboard_blur_lite"
+private const val PAUSE_WHILE_TYPING_KEY = "morphe_frosted_pause_blur_while_typing"
 
 private val helakuruLiteFrostedGlassPreferencesPatch = resourcePatch {
     execute {
@@ -40,7 +41,28 @@ private val helakuruLiteFrostedGlassPreferencesPatch = resourcePatch {
             enabled.setAttributeNS(androidNamespace, "android:defaultValue", "false")
             page.appendChild(enabled)
 
+            val pauseWhileTyping = preferences.createElement("SwitchPreference") as Element
+            pauseWhileTyping.setAttributeNS(androidNamespace, "android:key", PAUSE_WHILE_TYPING_KEY)
+            pauseWhileTyping.setAttributeNS(androidNamespace, "android:title", "Pause blur while typing")
+            pauseWhileTyping.setAttributeNS(
+                androidNamespace,
+                "android:summary",
+                "Make the keyboard opaque while typing; restore blur after the selected delay"
+            )
+            pauseWhileTyping.setAttributeNS(androidNamespace, "android:defaultValue", "false")
+            page.appendChild(pauseWhileTyping)
+
+            addPreference(
+                preferences,
+                page,
+                androidNamespace,
+                "morphe_frosted_resume_blur_delay",
+                "Resume blur delay",
+                "200 ms"
+            )
+
             addPreference(preferences, page, androidNamespace, "morphe_frosted_blur_strength", "Blur strength", "32 dp")
+            addPreference(preferences, page, androidNamespace, "morphe_frosted_blur_mode", "Blur method", "Background blur")
             addPreference(preferences, page, androidNamespace, "morphe_frosted_transparency_mode", "Background transparency", "Follow Helakuru theme")
             addPreference(preferences, page, androidNamespace, "morphe_frosted_transparency_amount", "Custom transparency", "50%")
             addPreference(preferences, page, androidNamespace, "morphe_frosted_color_theme", "Color theme", "Monet")
@@ -179,6 +201,16 @@ val helakuruLiteLiveKeyboardBlurPatch = patch(
         HelakuruLiteKeyboardWindowFingerprint.method.addInstructions(
             lifecycleReturn,
             "invoke-static {p0}, $LITE_EXTENSION->applyKeyboardBlur(Ljava/lang/Object;)V"
+        )
+
+        val keypressInstructions = HelakuruLiteKeypressFingerprint.method.implementation!!.instructions.toList()
+        val keypressReturn = keypressInstructions.indexOfLast {
+            it.opcode == com.android.tools.smali.dexlib2.Opcode.RETURN_VOID
+        }
+        check(keypressReturn >= 0) { "Could not locate the Lite keypress return" }
+        HelakuruLiteKeypressFingerprint.method.addInstructions(
+            keypressReturn,
+            "invoke-static {p0, p1}, $LITE_EXTENSION->onKeyPress(Ljava/lang/Object;I)V"
         )
 
         val settings = HelakuruLiteSettingsCreateFingerprint.instructionMatches.single()

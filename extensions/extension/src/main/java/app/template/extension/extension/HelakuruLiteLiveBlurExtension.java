@@ -171,7 +171,7 @@ public final class HelakuruLiteLiveBlurExtension {
             View root = getRootView(service);
             state.root = root;
             state.targetAlpha = getConfiguredRootAlpha(service, root, preferences);
-            setWindowBlur(window, state.blurMode, 0);
+            disableWindowBlur(window);
             setRootAlpha(state, 255);
 
             WindowState capturedState = state;
@@ -260,6 +260,18 @@ public final class HelakuruLiteLiveBlurExtension {
                 window.getClass().getMethod("setBackgroundBlurRadius", int.class)
                         .invoke(window, backgroundRadius);
             }
+        } catch (Throwable ignored) { }
+    }
+
+    /** Clear every window blur mechanism while typing, regardless of the selected blur mode. */
+    private static void disableWindowBlur(Window window) {
+        if (Build.VERSION.SDK_INT < 31) return;
+        try {
+            WindowManager.LayoutParams attributes = window.getAttributes();
+            attributes.flags &= ~WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+            attributes.getClass().getMethod("setBlurBehindRadius", int.class).invoke(attributes, 0);
+            window.setAttributes(attributes);
+            window.getClass().getMethod("setBackgroundBlurRadius", int.class).invoke(window, 0);
         } catch (Throwable ignored) { }
     }
 
