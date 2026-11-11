@@ -8,7 +8,7 @@ import app.template.patches.shared.Constants.COMPATIBILITY_HELAKURU
 val diagnosticNoOpPatch = patch(
     name = "Diagnostic No-op (no app changes)",
     description = "Creates a comparison build without applying the live blur modifications.",
-    default = true
+    default = false
 ) {
     compatibleWith(COMPATIBILITY_HELAKURU)
 

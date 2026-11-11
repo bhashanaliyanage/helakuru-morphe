@@ -38,7 +38,7 @@ private val helakuruLiteKeypressSettingsResourcePatch = resourcePatch {
 val helakuruLiteKeypressFeedbackPatch = patch(
     name = "Keypress Haptics and Sound (Helakuru Lite)",
     description = "Adds independent haptic and system key click feedback settings.",
-    default = false
+    default = true
 ) {
     compatibleWith(COMPATIBILITY_HELAKURU_LITE)
     dependsOn(helakuruLiteKeypressSettingsResourcePatch, helakuruLiteSettingsColorsPatch)

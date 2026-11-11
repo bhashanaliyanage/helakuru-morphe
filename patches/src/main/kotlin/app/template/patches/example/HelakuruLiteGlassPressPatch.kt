@@ -64,7 +64,7 @@ private val helakuruLiteGlassPressPreferencesPatch = resourcePatch {
 val helakuruLiteGlassPressPatch = patch(
     name = "Glass Press Effect (Helakuru Lite)",
     description = "Adds a tap bloom and optional key dip animation.",
-    default = false
+    default = true
 ) {
     compatibleWith(COMPATIBILITY_HELAKURU_LITE)
     dependsOn(helakuruLiteGlassPressPreferencesPatch, helakuruLiteSettingsColorsPatch)

@@ -61,6 +61,14 @@ object HelakuruLiteKeypressFingerprint : Fingerprint(
     returnType = "V"
 )
 
+/** Lite key delivery callback, called after a key is released. */
+object HelakuruLiteKeyDeliveryFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/keyboard/KeyboardService;",
+    name = "onKey",
+    parameters = listOf("I", "[I"),
+    returnType = "V"
+)
+
 /** Theme customization view containing Lite's existing Key border switch. */
 object HelakuruLiteThemeEditorViewFingerprint : Fingerprint(
     definingClass = "Llk/bhasha/helakuru/lite/theme/fragment/ThemeCustomizeFragment;",

@@ -5,7 +5,7 @@
     {
       "name": "Diagnostic No-op (no app changes)",
       "description": "Creates a comparison build without applying the live blur modifications.",
-      "default": true,
+      "default": false,
       "category": null,
       "compatiblePackages": [
         {
@@ -59,7 +59,7 @@
     {
       "name": "Glass Press Effect (Helakuru Lite)",
       "description": "Adds a tap bloom and optional key dip animation.",
-      "default": false,
+      "default": true,
       "category": null,
       "compatiblePackages": [
         {
@@ -113,7 +113,7 @@
     {
       "name": "Keypress Haptics and Sound (Helakuru Lite)",
       "description": "Adds independent haptic and system key click feedback settings.",
-      "default": false,
+      "default": true,
       "category": null,
       "compatiblePackages": [
         {
@@ -167,6 +167,33 @@
     {
       "name": "Personal Photo Themes (Helakuru Lite)",
       "description": "Adds independent local photo backgrounds and hides the Pro image and Popular Themes catalogs.",
+      "default": true,
+      "category": null,
+      "compatiblePackages": [
+        {
+          "packageName": "lk.bhasha.helakuru.lite",
+          "name": "Helakuru Lite",
+          "description": null,
+          "apkFileType": "APK",
+          "appIconColor": "#D7C900",
+          "signatures": null,
+          "formFactor": "MOBILE",
+          "targets": [
+            {
+              "version": "3.2.0",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": null,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Spacebar Cursor Control (Helakuru Lite)",
+      "description": "Hold the spacebar and swipe to move the text cursor.",
       "default": true,
       "category": null,
       "compatiblePackages": [

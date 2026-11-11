@@ -127,10 +127,8 @@ public final class HelakuruLiteGlassPressExtension {
             if (ATTACHED.containsKey(keyboard)) return;
             ATTACHED.put(keyboard, Boolean.TRUE);
         }
-        keyboard.setOnTouchListener((view, event) -> {
-            observeTap(view, event);
-            return false;
-        });
+        HelakuruLiteTouchObserverExtension.addObserver(keyboard, "glass-press",
+                HelakuruLiteGlassPressExtension::observeTap);
     }
 
     private static void observeTap(View view, MotionEvent event) {
