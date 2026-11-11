@@ -215,6 +215,32 @@ val helakuruLiteLiveKeyboardBlurPatch = patch(
             "invoke-static {p0, p1}, $LITE_EXTENSION->onKeyPress(Ljava/lang/Object;I)V"
         )
 
+        listOf(
+            HelakuruLiteRefreshLayoutFingerprint,
+            HelakuruLiteSwitchLayoutFingerprint,
+            HelakuruLiteSwitchMainFingerprint,
+            HelakuruLiteSwitchNumbersFingerprint,
+            HelakuruLiteSwitchSymbolsFingerprint,
+            HelakuruLiteUpdateKeyboardLayoutFingerprint,
+            HelakuruLiteEnglishClickFingerprint,
+            HelakuruLiteSinhalaClickFingerprint
+        ).forEach { fingerprint ->
+            val method = fingerprint.method
+            val instructions = method.implementation!!.instructions.toList()
+            val returns = instructions.mapIndexedNotNull { index, instruction ->
+                index.takeIf { instruction.opcode == com.android.tools.smali.dexlib2.Opcode.RETURN_VOID }
+            }
+            check(returns.isNotEmpty()) { "Could not locate return in a Lite keyboard state callback" }
+            returns.asReversed().forEach { returnIndex ->
+                method.addInstructions(
+                    returnIndex,
+                    // refreshLayout has 18 registers: p0 is v16, outside invoke-static's
+                    // four-bit register limit. The range form also supports smaller methods.
+                    "invoke-static/range {p0 .. p0}, $LITE_EXTENSION->onKeyboardStateChanged(Ljava/lang/Object;)V"
+                )
+            }
+        }
+
         HelakuruLiteSettingsCreateFingerprint.method.addInstructions(
             helakuruLiteSettingsBindingIndex(),
             "invoke-static {p0}, $LITE_SETTINGS_EXTENSION->bindSettings(Ljava/lang/Object;)V"

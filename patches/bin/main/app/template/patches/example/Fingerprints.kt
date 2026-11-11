@@ -69,6 +69,63 @@ object HelakuruLiteKeyDeliveryFingerprint : Fingerprint(
     returnType = "V"
 )
 
+/** Keyboard state callbacks that refresh Lite's toolbar or active layout. */
+object HelakuruLiteRefreshLayoutFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/keyboard/KeyboardService;",
+    name = "refreshLayout",
+    parameters = listOf("Z"),
+    returnType = "V"
+)
+
+object HelakuruLiteSwitchLayoutFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/keyboard/KeyboardService;",
+    name = "switchLayout",
+    parameters = emptyList(),
+    returnType = "V"
+)
+
+object HelakuruLiteSwitchMainFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/keyboard/KeyboardService;",
+    name = "switchMain",
+    parameters = emptyList(),
+    returnType = "V"
+)
+
+object HelakuruLiteSwitchNumbersFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/keyboard/KeyboardService;",
+    name = "switchNumbers",
+    parameters = emptyList(),
+    returnType = "V"
+)
+
+object HelakuruLiteSwitchSymbolsFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/keyboard/KeyboardService;",
+    name = "switchSymbols",
+    parameters = emptyList(),
+    returnType = "V"
+)
+
+object HelakuruLiteUpdateKeyboardLayoutFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/keyboard/KeyboardService;",
+    name = "updateKeyboardLayout",
+    parameters = emptyList(),
+    returnType = "V"
+)
+
+object HelakuruLiteEnglishClickFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/keyboard/KeyboardService;",
+    name = "onEnglishClick",
+    parameters = emptyList(),
+    returnType = "V"
+)
+
+object HelakuruLiteSinhalaClickFingerprint : Fingerprint(
+    definingClass = "Llk/bhasha/helakuru/lite/keyboard/KeyboardService;",
+    name = "onSinhalaClick",
+    parameters = emptyList(),
+    returnType = "V"
+)
+
 /** Theme customization view containing Lite's existing Key border switch. */
 object HelakuruLiteThemeEditorViewFingerprint : Fingerprint(
     definingClass = "Llk/bhasha/helakuru/lite/theme/fragment/ThemeCustomizeFragment;",

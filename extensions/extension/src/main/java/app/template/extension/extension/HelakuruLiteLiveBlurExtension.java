@@ -153,6 +153,43 @@ public final class HelakuruLiteLiveBlurExtension {
         }
     }
 
+    /** Reapply Lite keyboard surfaces after a language, layout, or toolbar-state transition. */
+    public static void onKeyboardStateChanged(Object serviceObject) {
+        if (!(serviceObject instanceof InputMethodService)) return;
+        InputMethodService service = (InputMethodService) serviceObject;
+        try {
+            View root = getRootView(service);
+            Runnable refresh = () -> {
+                try {
+                    HelakuruLiteSettingsExtension.invalidateKeyboardMode(service);
+                    SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(service);
+                    if (!preferences.getBoolean(ENABLED, false)) return;
+                    Window window = service.getWindow() == null ? null : service.getWindow().getWindow();
+                    if (window == null) return;
+                    WindowState state;
+                    synchronized (STATES) { state = STATES.get(window); }
+                    if (state == null) {
+                        applyKeyboardBlur(service);
+                        return;
+                    }
+                    if (isBatterySaverOn(service)) {
+                        suspendForBatterySaver(service, window, state);
+                    } else if (state.restoreRunnable != null || state.animator != null) {
+                        // Keep the typing-pause opaque state and its pending restoration intact.
+                        applyKeyboardSurfaces(service, getRootView(service), state, preferences, true);
+                    } else {
+                        applyKeyboardBlur(service);
+                    }
+                } catch (Throwable ignored) {
+                    // Keyboard state changes must never interfere with normal typing.
+                }
+            };
+            // Run after Lite's queued layout/theme work but before the next frame is drawn.
+            if (root != null) root.postOnAnimation(refresh);
+            else new Handler(Looper.getMainLooper()).post(refresh);
+        } catch (Throwable ignored) { }
+    }
+
     /** Called independently of Lite's optional keypress-feedback patch. */
     public static void onKeyPress(Object serviceObject, int keyCode) {
         if (!(serviceObject instanceof InputMethodService)) return;

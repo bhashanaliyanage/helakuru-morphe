@@ -405,6 +405,25 @@ public final class HelakuruLiteSettingsExtension {
         }
     }
 
+    /** Drop the short-lived mode cache after Lite changes language or keyboard layout. */
+    public static void invalidateKeyboardMode(Object serviceObject) {
+        if (serviceObject == null) return;
+        try {
+            Field keyboardField = findField(serviceObject.getClass(), "keyboardView");
+            if (keyboardField == null) return;
+            keyboardField.setAccessible(true);
+            Object keyboardObject = keyboardField.get(serviceObject);
+            if (!(keyboardObject instanceof View)) return;
+            View keyboardView = (View) keyboardObject;
+            synchronized (KEYBOARD_MODES) {
+                KEYBOARD_MODES.remove(keyboardView);
+            }
+            keyboardView.invalidate();
+        } catch (Throwable ignored) {
+            // State changes still complete normally if Lite changes its view field.
+        }
+    }
+
     /** Scale only the drawable; the stock inset remains available to language labels/icons. */
     public static void drawKeyBackground(GradientDrawable drawable, Canvas canvas,
                                          Object viewObject, Keyboard.Key key) {
@@ -438,9 +457,22 @@ public final class HelakuruLiteSettingsExtension {
                 float scale = clamp(preferences.getInt(KEY_SIZE, DEFAULT_KEY_SIZE), 70, 100) / 100f;
                 float centerX = key.x + key.width / 2f;
                 float centerY = key.y + key.height / 2f;
-                drawable.setBounds(Math.round(centerX - key.width * scale / 2f),
+                int code = key.codes == null || key.codes.length == 0 ? 0 : key.codes[0];
+                float left = centerX - key.width * scale / 2f;
+                float right = centerX + key.width * scale / 2f;
+                if (code == 32 && viewObject instanceof android.inputmethodservice.KeyboardView) {
+                    // The regular proportional inset becomes disproportionately wide on Lite's
+                    // 40%-width space key. Match each visible side gap to its adjacent key.
+                    float leftInset = neighboringKeyInset(
+                            ((android.inputmethodservice.KeyboardView) viewObject).getKeyboard(), key, true, scale);
+                    float rightInset = neighboringKeyInset(
+                            ((android.inputmethodservice.KeyboardView) viewObject).getKeyboard(), key, false, scale);
+                    left = key.x + leftInset;
+                    right = key.x + key.width - rightInset;
+                }
+                drawable.setBounds(Math.round(left),
                         Math.round(centerY - key.height * scale / 2f),
-                        Math.round(centerX + key.width * scale / 2f),
+                        Math.round(right),
                         Math.round(centerY + key.height * scale / 2f));
             }
         } catch (Throwable ignored) {
@@ -451,6 +483,29 @@ public final class HelakuruLiteSettingsExtension {
         } finally {
             if (stockFill != null) drawable.setColor(stockFill);
         }
+    }
+
+    private static float neighboringKeyInset(Keyboard keyboard, Keyboard.Key spaceKey,
+                                              boolean leftSide, float scale) {
+        if (keyboard == null) return spaceKey.height * (1f - scale) / 2f;
+        Keyboard.Key nearest = null;
+        int nearestDistance = Integer.MAX_VALUE;
+        int spaceRight = spaceKey.x + spaceKey.width;
+        int spaceBottom = spaceKey.y + spaceKey.height;
+        for (Keyboard.Key candidate : keyboard.getKeys()) {
+            if (candidate == spaceKey || candidate.codes == null || candidate.codes.length == 0) continue;
+            int overlap = Math.min(spaceBottom, candidate.y + candidate.height)
+                    - Math.max(spaceKey.y, candidate.y);
+            if (overlap <= 0) continue;
+            int distance = leftSide ? spaceKey.x - (candidate.x + candidate.width)
+                    : candidate.x - spaceRight;
+            if (distance >= 0 && distance < nearestDistance) {
+                nearest = candidate;
+                nearestDistance = distance;
+            }
+        }
+        float adjacentWidth = nearest == null ? spaceKey.height : nearest.width;
+        return adjacentWidth * (1f - scale) / 2f;
     }
 
     private static int blendTowardWhite(int color, float amount) {
