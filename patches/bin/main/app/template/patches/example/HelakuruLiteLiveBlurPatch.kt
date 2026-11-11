@@ -9,6 +9,7 @@ import org.w3c.dom.Element
 
 private const val LITE_EXTENSION = "Lapp/template/extension/extension/HelakuruLiteLiveBlurExtension;"
 private const val LITE_SETTINGS_EXTENSION = "Lapp/template/extension/extension/HelakuruLiteSettingsExtension;"
+private const val LITE_GLASS_PRESS_EXTENSION = "Lapp/template/extension/extension/HelakuruLiteGlassPressExtension;"
 private const val LITE_SETTINGS_KEY = "morphe_live_keyboard_blur_lite"
 private const val PAUSE_WHILE_TYPING_KEY = "morphe_frosted_pause_blur_while_typing"
 
@@ -235,6 +236,10 @@ val helakuruLiteLiveKeyboardBlurPatch = patch(
                     index to "invoke-static {v1, v9, v0, v7}, $LITE_SETTINGS_EXTENSION->drawKeyBackground(Landroid/graphics/drawable/GradientDrawable;Landroid/graphics/Canvas;Ljava/lang/Object;Landroid/inputmethodservice/Keyboard\$Key;)V"
                 "Landroid/graphics/Canvas;->drawText(Ljava/lang/String;FFLandroid/graphics/Paint;)V" ->
                     index to "invoke-static {v9, v1, v7, v6, v2}, $LITE_SETTINGS_EXTENSION->drawKeyLabel(Landroid/graphics/Canvas;Ljava/lang/String;Landroid/inputmethodservice/Keyboard\$Key;FLandroid/graphics/Paint;)V"
+                "$LITE_GLASS_PRESS_EXTENSION->drawKeyBackground(Landroid/graphics/drawable/GradientDrawable;Landroid/graphics/Canvas;Ljava/lang/Object;Landroid/inputmethodservice/Keyboard\$Key;)V" ->
+                    index to "invoke-static {v1, v9, v0, v7}, $LITE_GLASS_PRESS_EXTENSION->drawFrostedKeyBackground(Landroid/graphics/drawable/GradientDrawable;Landroid/graphics/Canvas;Ljava/lang/Object;Landroid/inputmethodservice/Keyboard\$Key;)V"
+                "$LITE_GLASS_PRESS_EXTENSION->drawKeyLabel(Landroid/graphics/Canvas;Ljava/lang/String;Landroid/inputmethodservice/Keyboard\$Key;FLandroid/graphics/Paint;)V" ->
+                    index to "invoke-static {v9, v1, v7, v6, v2}, $LITE_GLASS_PRESS_EXTENSION->drawFrostedKeyLabel(Landroid/graphics/Canvas;Ljava/lang/String;Landroid/inputmethodservice/Keyboard\$Key;FLandroid/graphics/Paint;)V"
                 else -> null
             }
         }

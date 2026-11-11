@@ -14,16 +14,18 @@ import java.net.URLClassLoader
 import java.util.jar.Manifest
 
 fun main() {
-    val patchFiles = setOf(
-        File("build/libs/").listFiles { file ->
+    val patchFiles = File("build/libs/").listFiles { file ->
             val fileName = file.name
             !fileName.contains("javadoc") &&
                     !fileName.contains("sources") &&
                     fileName.endsWith(".mpp")
-        }!!.first()
-    )
-    val loadedPatches = loadPatchesFromJar(patchFiles)
-    val patchClassLoader = URLClassLoader(patchFiles.map { it.toURI().toURL() }.toTypedArray())
+        }!!.toList()
+    val patchFile = patchFiles.firstOrNull { it.name == "patches.mpp" }
+        ?: patchFiles.maxByOrNull { it.lastModified() }
+        ?: error("No Morphe patch bundle found in build/libs")
+    val patchFilesToLoad = setOf(patchFile)
+    val loadedPatches = loadPatchesFromJar(patchFilesToLoad)
+    val patchClassLoader = URLClassLoader(patchFilesToLoad.map { it.toURI().toURL() }.toTypedArray())
     val manifest = patchClassLoader.getResources("META-INF/MANIFEST.MF")
 
     while (manifest.hasMoreElements()) {
