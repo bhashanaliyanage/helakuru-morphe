@@ -215,9 +215,8 @@ val helakuruLiteLiveKeyboardBlurPatch = patch(
             "invoke-static {p0, p1}, $LITE_EXTENSION->onKeyPress(Ljava/lang/Object;I)V"
         )
 
-        val settings = HelakuruLiteSettingsCreateFingerprint.instructionMatches.single()
         HelakuruLiteSettingsCreateFingerprint.method.addInstructions(
-            settings.index + 1,
+            helakuruLiteSettingsBindingIndex(),
             "invoke-static {p0}, $LITE_SETTINGS_EXTENSION->bindSettings(Ljava/lang/Object;)V"
         )
 

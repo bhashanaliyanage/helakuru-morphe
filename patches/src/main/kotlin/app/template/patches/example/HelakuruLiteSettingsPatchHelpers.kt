@@ -50,3 +50,16 @@ internal fun prepareHelakuruLiteSettingsTheme() {
         "invoke-static {p0}, $LITE_SETTINGS_EXTENSION->prepareSettingsActivityTheme(Ljava/lang/Object;)V"
     )
 }
+
+/** Resolve the current index after other patches have inserted settings hooks. */
+internal fun helakuruLiteSettingsBindingIndex(): Int {
+    val instructions = HelakuruLiteSettingsCreateFingerprint.method.implementation?.instructions?.toList()
+        ?: error("Lite SettingsActivity.onCreate has no implementation")
+    val index = instructions.indexOfFirst { instruction ->
+        val reference = (instruction as? ReferenceInstruction)?.reference as? MethodReference
+        reference?.name == "addPreferencesFromResource" &&
+            reference.definingClass == "Landroid/preference/PreferenceActivity;"
+    }
+    check(index >= 0) { "Could not find Lite settings preference initialization" }
+    return index + 1
+}

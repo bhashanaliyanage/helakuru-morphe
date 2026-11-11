@@ -46,9 +46,8 @@ val helakuruLiteKeypressFeedbackPatch = patch(
 
     execute {
         prepareHelakuruLiteSettingsTheme()
-        val settings = HelakuruLiteSettingsCreateFingerprint.instructionMatches.single()
         HelakuruLiteSettingsCreateFingerprint.method.addInstructions(
-            settings.index + 1,
+            helakuruLiteSettingsBindingIndex(),
             "invoke-static {p0}, $KEYPRESS_EXTENSION->bindSettings(Ljava/lang/Object;)V"
         )
 
