@@ -1,34 +1,7 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "1.0.0",
+  "version": "unspecified",
   "patches": [
-    {
-      "name": "Diagnostic No-op (no app changes)",
-      "description": "Creates a comparison build without applying the live blur modifications.",
-      "default": false,
-      "category": null,
-      "compatiblePackages": [
-        {
-          "packageName": "lk.bhasha.helakuru",
-          "name": "Helakuru",
-          "description": null,
-          "apkFileType": "APK",
-          "appIconColor": "#D7C900",
-          "signatures": null,
-          "formFactor": "MOBILE",
-          "targets": [
-            {
-              "version": "12.2.13",
-              "versionCodes": null,
-              "isExperimental": false,
-              "minSdk": null,
-              "description": null
-            }
-          ]
-        }
-      ],
-      "options": []
-    },
     {
       "name": "Frosted Glass (Helakuru Lite)",
       "description": "Adds adjustable keyboard blur, transparency, Monet tint, and Gboard-style key backgrounds.",
@@ -154,33 +127,6 @@
           "targets": [
             {
               "version": "3.2.0",
-              "versionCodes": null,
-              "isExperimental": false,
-              "minSdk": null,
-              "description": null
-            }
-          ]
-        }
-      ],
-      "options": []
-    },
-    {
-      "name": "Live Keyboard Background Blur",
-      "description": "Adds a setting to blur the content behind the Helakuru keyboard.",
-      "default": true,
-      "category": null,
-      "compatiblePackages": [
-        {
-          "packageName": "lk.bhasha.helakuru",
-          "name": "Helakuru",
-          "description": null,
-          "apkFileType": "APK",
-          "appIconColor": "#D7C900",
-          "signatures": null,
-          "formFactor": "MOBILE",
-          "targets": [
-            {
-              "version": "12.2.13",
               "versionCodes": null,
               "isExperimental": false,
               "minSdk": null,
